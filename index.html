@@ -839,53 +839,61 @@ async function exportPDF(){
   readFieldsToState();
   toast('PDF生成中...');
   try {
-    // 接続マップ画像を先に生成（Canvasベースなので非表示でもOK）
     const mapImg = await getMapImage();
+    const frame  = document.getElementById('printFrame');
 
-    // 印刷用フレームにHTMLを書き込む（画面外に常時表示状態）
-    const frame = document.getElementById('printFrame');
-    frame.innerHTML = buildPrintHTML(mapImg);
-
-    // 画像のロードを待つ
-    const imgs = frame.querySelectorAll('img');
-    await Promise.all(Array.from(imgs).map(img =>
-      img.complete ? Promise.resolve() : new Promise(r => { img.onload=r; img.onerror=r; })
-    ));
-    await new Promise(r => setTimeout(r, 100));
-
-    // html2canvasでキャプチャ（画面外でも position:fixed + left:-9999px なら描画される）
-    const canvas = await html2canvas(frame, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      width: 794,
-      windowWidth: 794 + 9999, // left:-9999pxのオフセットを補正
-      scrollX: 9999
-    });
-
-    frame.innerHTML = ''; // クリア
-
+    // ── セクションごとに個別キャプチャして改ページを制御 ──
+    // printFrameにセクション単位のdivを入れてhtmlをキャプチャする
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
-    const PW = pdf.internal.pageSize.getWidth();
-    const PH = pdf.internal.pageSize.getHeight();
-    const imgW = PW;
-    const imgH = canvas.height * imgW / canvas.width;
-    let yPos = 0, rem = imgH;
+    const PW=210, PH=297, ML=0;
+    let firstPage = true;
 
-    while (rem > 0) {
-      if (yPos > 0) pdf.addPage();
-      const sliceH = Math.min(PH, rem);
-      const srcY   = yPos * canvas.height / imgH;
-      const srcH   = sliceH * canvas.height / imgH;
-      const sc = document.createElement('canvas');
-      sc.width = canvas.width; sc.height = srcH;
-      sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-      pdf.addImage(sc.toDataURL('image/png'), 'PNG', 0, 0, imgW, sliceH);
-      yPos += sliceH; rem -= sliceH;
+    // セクションHTMLのリスト（各要素が1キャプチャ単位）
+    const sections = buildSections(mapImg);
+
+    for (const secHTML of sections) {
+      frame.innerHTML = secHTML;
+
+      // 画像のロードを待つ
+      const imgs = frame.querySelectorAll('img');
+      await Promise.all(Array.from(imgs).map(img =>
+        img.complete ? Promise.resolve() :
+        new Promise(r => { img.onload=r; img.onerror=r; })
+      ));
+      await new Promise(r => setTimeout(r, 60));
+
+      const canvas = await html2canvas(frame, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 794,
+        windowWidth: 794 + 9999,
+        scrollX: 9999
+      });
+
+      const imgW = PW;
+      const imgH = canvas.height * imgW / canvas.width;
+
+      // セクションがページをまたぐ場合はさらに分割
+      let yPos = 0, rem = imgH;
+      while (rem > 0) {
+        if (!firstPage) pdf.addPage();
+        firstPage = false;
+
+        const sliceH = Math.min(PH, rem);
+        const srcY   = yPos * canvas.height / imgH;
+        const srcH   = sliceH * canvas.height / imgH;
+        const sc = document.createElement('canvas');
+        sc.width = canvas.width; sc.height = Math.max(1, Math.ceil(srcH));
+        sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+        pdf.addImage(sc.toDataURL('image/png'), 'PNG', 0, 0, imgW, sliceH);
+        yPos += sliceH; rem -= sliceH;
+      }
     }
 
+    frame.innerHTML = '';
     const fname = `作業計画書_${state.dcName||'無題'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
     pdf.save(fname);
     toast('PDFを出力しました！');
@@ -893,6 +901,122 @@ async function exportPDF(){
     console.error(e);
     toast('PDF生成に失敗しました: ' + e.message);
   }
+}
+
+// セクションごとにHTMLを分割して返す
+function buildSections(mapImg) {
+  const s = state;
+  const dt = s.workDate ? new Date(s.workDate).toLocaleString('ja-JP') : '未設定';
+
+  // 共通スタイル（各セクションに埋め込む）
+  const baseStyle = `
+    <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body,div{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;font-size:13px;color:#1a1f2e}
+    .pv-title{text-align:center;font-size:22px;font-weight:700;color:#1a2540;border-bottom:3px solid #2e7de0;padding-bottom:10px;margin-bottom:20px}
+    .pv-table{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:13px}
+    .pv-table td{border:1px solid #d4d8e8;padding:7px 10px}
+    .pv-table td:first-child{background:#1a2540;color:#fff;font-weight:700;width:30%}
+    .sec-hdr{background:#1a2540;color:#fff;padding:7px 12px;font-size:13px;font-weight:700;border-radius:4px 4px 0 0;margin-top:2px}
+    .sec-body{border:1px solid #d4d8e8;border-top:none;padding:12px;border-radius:0 0 4px 4px}
+    .step-row{display:flex;gap:10px;margin-bottom:8px;align-items:flex-start}
+    .step-num{background:#2e7de0;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700;flex-shrink:0}
+    .cl-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f6}
+    .conn-table{width:100%;border-collapse:collapse;font-size:12px}
+    .conn-table th{background:#1a2540;color:#fff;padding:6px 8px;text-align:left}
+    .conn-table td{border:1px solid #d4d8e8;padding:6px 8px}
+    .photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .photo-grid img{width:160px;height:120px;object-fit:contain;border:1px solid #d4d8e8;border-radius:4px}
+    .map-img{width:100%;border-radius:4px;border:1px solid #d4d8e8;margin-top:8px}
+    </style>`;
+
+  const wrap = (inner) => `<div style="padding:24px 28px;background:#fff">${baseStyle}${inner}</div>`;
+
+  const sections = [];
+
+  // ① タイトル + DC情報
+  sections.push(wrap(`
+    <div class="pv-title">作業計画書</div>
+    <table class="pv-table">
+      <tr><td>DC / 局舎名</td><td>${esc(s.dcName)||'—'}</td></tr>
+      <tr><td>作業日時</td><td>${dt}</td></tr>
+      <tr><td>作業者</td><td>${esc(s.worker)||'—'}</td></tr>
+      <tr><td>承認者</td><td>${esc(s.approver)||'—'}</td></tr>
+      <tr><td>フロア / ゾーン</td><td>${esc(s.floorZone)||'—'}</td></tr>
+      <tr><td>緊急連絡先</td><td>${esc(s.emergency)||'—'}</td></tr>
+      <tr><td>作業概要</td><td>${esc(s.workSummary)||'—'}</td></tr>
+    </table>`));
+
+  // ② チェックリスト
+  if ((s.checklist||[]).length) {
+    sections.push(wrap(`
+      <div class="sec-hdr">🎒 持ち物チェックリスト</div>
+      <div class="sec-body">
+        ${s.checklist.map(c=>`<div class="cl-row"><span>□</span><span style="flex:1">${esc(c.name)}</span><span style="color:#6b7494">${esc(c.qty)}</span></div>`).join('')}
+      </div>`));
+  }
+
+  // ③ 作業手順
+  if ((s.steps||[]).length) {
+    sections.push(wrap(`
+      <div class="sec-hdr">📝 作業手順</div>
+      <div class="sec-body">
+        ${s.steps.map((st,i)=>`<div class="step-row"><div class="step-num">${i+1}</div><div style="flex:1;line-height:1.7">${esc(st.text).replace(/
+/g,'<br>')}</div></div>`).join('')}
+      </div>`));
+  }
+
+  // ④ ラック情報
+  if ((s.racks||[]).length) {
+    sections.push(wrap(`
+      <div class="sec-hdr">🗄️ ラック情報</div>
+      <div class="sec-body">
+        ${s.racks.map(r=>`
+          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f0f2f6">
+            <b>${esc(r.id)}</b>　${esc(r.name)}<br>
+            <small style="color:#6b7494">${esc(r.memo)}</small>
+            ${(r.photos||[]).length?`<div class="photo-grid">${r.photos.map(p=>`<img src="${p.src}">`).join('')}</div>`:''}
+          </div>`).join('')}
+      </div>`));
+  }
+
+  // ⑤ デバイス情報
+  if ((s.devices||[]).length) {
+    sections.push(wrap(`
+      <div class="sec-hdr">💻 デバイス情報</div>
+      <div class="sec-body">
+        ${s.devices.map(d=>`
+          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f0f2f6">
+            <b>${esc(d.name)}</b>　<small style="color:#6b7494">${esc(d.model)}</small><br>
+            ポート: ${esc(d.port)||'—'}<br>
+            <small>${esc(d.memo)}</small>
+            ${(d.photos||[]).length?`<div class="photo-grid">${d.photos.map(p=>`<img src="${p.src}">`).join('')}</div>`:''}
+          </div>`).join('')}
+      </div>`));
+  }
+
+  // ⑥ 接続情報
+  if ((s.connections||[]).length) {
+    sections.push(wrap(`
+      <div class="sec-hdr">🔗 接続情報</div>
+      <div class="sec-body">
+        <table class="conn-table">
+          <thead><tr><th>デバイスA</th><th>ポートA</th><th>デバイスB</th><th>ポートB</th><th>備考</th></tr></thead>
+          <tbody>${s.connections.map(l=>`<tr><td>${esc(l.deviceA)}</td><td>${esc(l.portA)}</td><td>${esc(l.deviceB)}</td><td>${esc(l.portB)}</td><td>${esc(l.memo)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>`));
+  }
+
+  // ⑦ 接続マップ（単独ページ）
+  if (mapImg) {
+    sections.push(wrap(`
+      <div class="sec-hdr">🗺️ 接続マップ</div>
+      <div class="sec-body">
+        <img class="map-img" src="${mapImg}">
+      </div>`));
+  }
+
+  return sections;
 }
 
 // 印刷専用HTML（pv-と同じ構造・printFrame用）
