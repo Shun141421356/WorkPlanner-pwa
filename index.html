@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a2540">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="作業計画書">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>作業計画書ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root {
+  --navy:#1a2540; --navy2:#263354; --accent:#2e7de0; --accent-l:#e8f1fc;
+  --green:#1a8c5c; --green-l:#e6f7f1; --red:#c0362a; --red-l:#fdecea;
+  --bg:#f0f2f6; --card:#fff; --border:#d4d8e8; --text:#1a1f2e; --muted:#6b7494;
+  --radius:12px; --shadow:0 2px 12px rgba(26,37,64,.10);
+  --safe-top: env(safe-area-inset-top);
+  --safe-bot: env(safe-area-inset-bottom);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(--bg);color:var(--text);font-size:15px;min-height:100dvh;overscroll-behavior:none}
+
+/* ── HEADER ── */
+.app-bar{background:var(--navy);color:#fff;padding:calc(var(--safe-top) + 10px) 16px 10px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.app-bar .logo{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px}
+.app-bar .logo-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px}
+
+/* ── SCREENS ── */
+.screen{display:none;padding-bottom:calc(var(--safe-bot) + 80px)}
+.screen.active{display:block}
+
+/* ── HOME ── */
+.home-hero{background:linear-gradient(145deg,var(--navy) 0%,var(--navy2) 100%);color:#fff;padding:32px 20px 28px;text-align:center}
+.home-hero h1{font-size:22px;font-weight:700;margin-bottom:6px}
+.home-hero p{font-size:13px;opacity:.7}
+.home-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px}
+.home-card{background:var(--card);border-radius:var(--radius);padding:20px 12px;text-align:center;border:1.5px solid var(--border);box-shadow:var(--shadow);cursor:pointer;transition:all .15s;active:scale(.97)}
+.home-card:active{transform:scale(.97);border-color:var(--accent)}
+.home-card .ci{font-size:30px;margin-bottom:10px}
+.home-card h2{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.home-card p{font-size:11px;color:var(--muted);line-height:1.5}
+.section-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;padding:0 16px;margin-bottom:8px;text-transform:uppercase}
+.tmpl-list{padding:0 16px;display:flex;flex-direction:column;gap:6px}
+.tmpl-item{background:var(--card);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);box-shadow:var(--shadow)}
+.tmpl-item .ti{flex:1;cursor:pointer}
+.tmpl-item .ti .tn{font-weight:700;font-size:14px}
+.tmpl-item .ti .td{font-size:11px;color:var(--muted);margin-top:2px}
+.tmpl-del{background:none;border:none;color:var(--red);font-size:20px;padding:4px 8px;cursor:pointer}
+.empty-tmpl{text-align:center;color:var(--muted);font-size:13px;padding:24px}
+
+/* ── EDITOR ── */
+.editor-body{padding:12px 16px}
+.sec-card{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--border)}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;background:var(--navy);color:#fff;cursor:pointer;user-select:none}
+.sec-hdr h2{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sec-hdr .arr{transition:transform .2s;font-size:12px}
+.sec-hdr.col .arr{transform:rotate(-90deg)}
+.sec-body{padding:14px}
+.sec-body.hide{display:none}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font-size:12px;font-weight:700;color:var(--muted)}
+.field input,.field select,.field textarea{border:1.5px solid var(--border);border-radius:8px;padding:11px 13px;font-family:inherit;font-size:15px;color:var(--text);background:#fafbfd;transition:border .12s;resize:vertical;-webkit-appearance:none}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);background:#fff}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* checklsit */
+.cl-item{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.cl-item input[type=text]{flex:1;border:none;background:transparent;font-size:15px;font-family:inherit;outline:none}
+.cl-item .qty{width:64px;border:1.5px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;text-align:center}
+.cl-item .cl-del{background:none;border:none;color:var(--red);font-size:22px;cursor:pointer;padding:0 4px;line-height:1}
+
+/* steps */
+.step-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px}
+.step-num{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-row textarea{flex:1;border:none;background:transparent;font-family:inherit;font-size:14px;resize:vertical;min-height:56px;outline:none}
+.step-del{background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px}
+
+/* rack/device */
+.rack-card{background:var(--bg);border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid var(--border)}
+.rack-card .rc-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.rack-card .rc-hdr span{font-weight:700;font-size:14px;color:var(--navy)}
+.rack-del{background:none;border:none;color:var(--red);font-size:20px;cursor:pointer}
+.mini-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.mini-field label{font-size:11px;font-weight:700;color:var(--muted)}
+.mini-field input,.mini-field textarea{border:1.5px solid var(--border);border-radius:7px;padding:9px 11px;font-family:inherit;font-size:14px;background:#fff;-webkit-appearance:none}
+.mini-field input:focus,.mini-field textarea:focus{outline:none;border-color:var(--accent)}
+
+/* photo */
+.photo-scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-top:8px;-webkit-overflow-scrolling:touch}
+.photo-scroll::-webkit-scrollbar{display:none}
+.photo-thumb{position:relative;flex-shrink:0;width:90px;height:90px}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+.photo-thumb .pt-del{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.photo-thumb .pt-ann{position:absolute;bottom:4px;right:4px;background:rgba(26,37,64,.8);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;padding:2px 6px}
+.photo-add{flex-shrink:0;width:90px;height:90px;border:2px dashed var(--accent);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:var(--accent-l);color:var(--accent);font-size:11px;font-weight:700;gap:4px}
+.photo-add span{font-size:24px;line-height:1}
+
+/* 接続 */
+.link-card{background:var(--bg);border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid var(--border)}
+.link-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.link-hdr span{font-size:13px;font-weight:700;color:var(--navy)}
+.link-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.link-grid .mini-field{margin-bottom:0}
+
+/* add button */
+.add-btn{background:var(--accent-l);color:var(--accent);border:1.5px dashed var(--accent);border-radius:10px;padding:12px;font-size:14px;cursor:pointer;font-weight:700;font-family:inherit;width:100%;transition:background .12s}
+.add-btn:active{background:#d0e7fa}
+
+/* BOTTOM BAR */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:10px 16px calc(var(--safe-bot) + 10px);display:flex;gap:8px;z-index:100}
+.btn{padding:12px;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;border:none;flex:1;transition:all .12s}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-secondary{background:var(--navy);color:#fff}
+.btn-outline{background:#fff;color:var(--text);border:1.5px solid var(--border)}
+.btn-green{background:var(--green);color:#fff}
+.btn-sm{padding:8px 14px;font-size:13px;flex:none}
+
+/* TABS */
+.tab-bar{display:flex;overflow-x:auto;background:var(--card);border-bottom:2px solid var(--border);position:sticky;top:56px;z-index:90;-webkit-overflow-scrolling:touch}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab-btn{padding:12px 16px;font-size:13px;font-weight:700;white-space:nowrap;border:none;background:none;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:inherit}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* PREVIEW */
+.preview-body{padding:16px}
+#previewDoc{background:#fff;border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
+.pv-title{text-align:center;font-size:20px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--accent);padding-bottom:10px;margin-bottom:16px}
+.pv-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px}
+.pv-table td{border:1px solid var(--border);padding:7px 10px}
+.pv-table td:first-child{background:var(--navy);color:#fff;font-weight:700;width:35%}
+.pv-sec{margin-bottom:20px}
+.pv-sec-t{background:var(--navy);color:#fff;padding:6px 12px;font-size:13px;font-weight:700;border-radius:4px 4px 0 0}
+.pv-sec-b{border:1px solid var(--border);border-top:none;padding:12px;border-radius:0 0 4px 4px;font-size:13px}
+.pv-step{display:flex;gap:10px;margin-bottom:8px;align-items:flex-start}
+.pv-step-n{background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.pv-cl-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bg)}
+.pv-photo-grid{display:flex;flex-wrap:wrap;gap:8px}
+.pv-photo-grid img{width:120px;height:90px;object-fit:contain;border:1px solid var(--border);border-radius:6px}
+
+/* ANNOTATION */
+.ann-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;flex-direction:column}
+.ann-modal.open{display:flex}
+.ann-header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;padding-top:calc(var(--safe-top) + 14px)}
+.ann-header h3{font-size:15px;font-weight:700}
+.ann-close{background:none;border:none;color:#fff;font-size:22px;cursor:pointer}
+.ann-canvas-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#111;padding:8px}
+.ann-canvas-wrap canvas{max-width:100%;touch-action:none}
+.ann-tools{background:#fff;padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border)}
+.ann-tool{border:1.5px solid var(--border);background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;font-family:inherit;font-weight:600}
+.ann-tool.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#annColor{width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;padding:2px}
+.ann-footer{background:#fff;padding:12px 16px;padding-bottom:calc(var(--safe-bot)+12px);display:flex;gap:8px;border-top:1px solid var(--border)}
+
+/* TOAST */
+#toast{position:fixed;bottom:calc(var(--safe-bot)+90px);left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;border-radius:20px;padding:10px 22px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .3s;z-index:300;white-space:nowrap}
+#toast.show{opacity:1}
+
+@media(min-width:600px){
+  .home-cards{max-width:500px;margin:0 auto}
+  .editor-body{max-width:680px;margin:0 auto}
+  .preview-body{max-width:680px;margin:0 auto}
+}
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<!-- ══ SCREEN: HOME ══ -->
+<div id="sHome" class="screen active">
+  <header class="app-bar">
+    <div class="logo"><div class="logo-icon">📋</div>作業計画書ツール</div>
+  </header>
+  <div class="home-hero">
+    <h1>作業計画書を作成</h1>
+    <p>新規作成またはテンプレートから開始</p>
+  </div>
+  <div style="padding:16px 0 8px">
+    <div class="home-cards">
+      <div class="home-card" onclick="newDoc()">
+        <div class="ci">✨</div>
+        <h2>新規作成</h2>
+        <p>空白から新しい計画書を作成</p>
+      </div>
+      <div class="home-card" onclick="loadFromFile()">
+        <div class="ci">📂</div>
+        <h2>ファイル読込</h2>
+        <p>保存済みJSONを読み込む</p>
+      </div>
+    </div>
+  </div>
+  <div style="padding:8px 0 4px"><div class="section-title">保存済みテンプレート</div></div>
+  <div class="tmpl-list" id="tmplList"></div>
+  <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileLoad(event)">
+</div>
+
+<!-- ══ SCREEN: EDITOR ══ -->
+<div id="sEditor" class="screen">
+  <header class="app-bar">
+    <div class="logo"><div class="logo-icon">📋</div>作業計画書作成</div>
+    <button class="btn btn-outline btn-sm" onclick="goHome()" style="padding:6px 12px;font-size:12px">🏠</button>
+  </header>
+  <div class="tab-bar" id="tabBar">
+    <button class="tab-btn active" onclick="showTab('tDC',this)">🏢 DC情報</button>
+    <button class="tab-btn" onclick="showTab('tCL',this)">🎒 持ち物</button>
+    <button class="tab-btn" onclick="showTab('tST',this)">📝 手順</button>
+    <button class="tab-btn" onclick="showTab('tRK',this)">🗄️ ラック</button>
+    <button class="tab-btn" onclick="showTab('tDV',this)">💻 デバイス</button>
+    <button class="tab-btn" onclick="showTab('tLK',this)">🔗 接続</button>
+  </div>
+
+  <!-- DC情報 -->
+  <div id="tDC" class="editor-body">
+    <div class="field"><label>DC / 局舎名</label><input id="dcName" placeholder="例: 東京DC 第3棟"></div>
+    <div class="field-row">
+      <div class="field"><label>作業日時</label><input id="workDate" type="datetime-local"></div>
+      <div class="field"><label>緊急連絡先</label><input id="emergency" placeholder="080-XXXX-XXXX"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>作業者</label><input id="worker" placeholder="山田 太郎"></div>
+      <div class="field"><label>承認者</label><input id="approver" placeholder="鈴木 部長"></div>
+    </div>
+    <div class="field"><label>フロア / ゾーン</label><input id="floorZone" placeholder="3F エリアB"></div>
+    <div class="field"><label>作業概要</label><textarea id="workSummary" rows="4" placeholder="作業の目的・概要"></textarea></div>
+  </div>
+
+  <!-- 持ち物チェックリスト -->
+  <div id="tCL" class="editor-body" style="display:none">
+    <div id="clItems"></div>
+    <button class="add-btn" onclick="addCL()">＋ 持ち物を追加</button>
+  </div>
+
+  <!-- 作業手順 -->
+  <div id="tST" class="editor-body" style="display:none">
+    <div id="stItems"></div>
+    <button class="add-btn" onclick="addStep()" style="margin-top:8px">＋ 手順を追加</button>
+  </div>
+
+  <!-- ラック情報 -->
+  <div id="tRK" class="editor-body" style="display:none">
+    <div id="rkItems"></div>
+    <button class="add-btn" onclick="addRack()">＋ ラックを追加</button>
+  </div>
+
+  <!-- デバイス情報 -->
+  <div id="tDV" class="editor-body" style="display:none">
+    <div id="dvItems"></div>
+    <button class="add-btn" onclick="addDevice()">＋ デバイスを追加</button>
+  </div>
+
+  <!-- 接続情報 -->
+  <div id="tLK" class="editor-body" style="display:none">
+    <div id="lkItems"></div>
+    <button class="add-btn" onclick="addLink()">＋ 接続を追加</button>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn btn-outline" onclick="saveTemplate()">💾 保存</button>
+    <button class="btn btn-secondary" onclick="showPreview()">👁 確認</button>
+    <button class="btn btn-green" onclick="exportPDF()">📄 PDF</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: PREVIEW ══ -->
+<div id="sPreview" class="screen">
+  <header class="app-bar">
+    <div class="logo"><div class="logo-icon">📋</div>プレビュー</div>
+  </header>
+  <div class="preview-body"><div id="previewDoc"></div></div>
+  <div class="bottom-bar">
+    <button class="btn btn-outline" onclick="showScreen('sEditor')">← 編集</button>
+    <button class="btn btn-green" onclick="exportPDF()">📄 PDF出力</button>
+  </div>
+</div>
+
+<!-- ══ ANNOTATION MODAL ══ -->
+<div class="ann-modal" id="annModal">
+  <div class="ann-header">
+    <h3>✏️ 写真に注釈</h3>
+    <button class="ann-close" onclick="closeAnn()">✕</button>
+  </div>
+  <div class="ann-canvas-wrap"><canvas id="annCanvas"></canvas></div>
+  <div class="ann-tools">
+    <button class="ann-tool active" id="aTpen" onclick="setAnnTool('pen')">✏️ ペン</button>
+    <button class="ann-tool" id="aTarrow" onclick="setAnnTool('arrow')">➡️</button>
+    <button class="ann-tool" id="aTrect" onclick="setAnnTool('rect')">⬜</button>
+    <button class="ann-tool" id="aTtext" onclick="setAnnTool('text')">T</button>
+    <button class="ann-tool" onclick="undoAnn()">↩</button>
+    <button class="ann-tool" onclick="clearAnn()">🗑</button>
+    <input type="color" id="annColor" value="#e22b2b">
+    <input type="range" id="annSize" min="1" max="20" value="3" style="width:70px">
+  </div>
+  <div class="ann-footer">
+    <button class="btn btn-outline" onclick="closeAnn()">キャンセル</button>
+    <button class="btn btn-primary" onclick="applyAnn()">✔ 適用</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let state = {
+  dcName:'', workDate:'', worker:'', approver:'', workSummary:'', floorZone:'', emergency:'',
+  checklist:[], steps:[], racks:[], devices:[], connections:[]
+};
+let templates = JSON.parse(localStorage.getItem('wpt_v2') || '{}');
+
+// ═══════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function goHome() { showScreen('sHome'); refreshTmplList(); }
+
+function showTab(id, btn) {
+  ['tDC','tCL','tST','tRK','tDV','tLK'].forEach(t => {
+    document.getElementById(t).style.display = t === id ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (id === 'tCL') renderCL();
+  if (id === 'tST') renderSteps();
+  if (id === 'tRK') renderRacks();
+  if (id === 'tDV') renderDevices();
+  if (id === 'tLK') renderLinks();
+}
+
+// ═══════════════════════════════════════
+//  NEW / LOAD
+// ═══════════════════════════════════════
+function newDoc() {
+  state = { dcName:'', workDate:'', worker:'', approver:'', workSummary:'', floorZone:'', emergency:'',
+    checklist:[], steps:[], racks:[], devices:[], connections:[] };
+  loadStateToUI();
+  showScreen('sEditor');
+  showTab('tDC', document.querySelector('.tab-btn'));
+}
+
+function loadFromFile() { document.getElementById('fileInput').click(); }
+
+function handleFileLoad(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      state = JSON.parse(ev.target.result);
+      if (!state.connections) state.connections = [];
+      loadStateToUI();
+      showScreen('sEditor');
+      showTab('tDC', document.querySelector('.tab-btn'));
+      toast('テンプレートを読み込みました');
+    } catch { toast('読み込みに失敗しました'); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+
+function loadStateToUI() {
+  ['dcName','workDate','worker','approver','workSummary','floorZone','emergency'].forEach(k => {
+    const el = document.getElementById(k);
+    if (el) el.value = state[k] || '';
+  });
+}
+
+function readFieldsToState() {
+  ['dcName','workDate','worker','approver','workSummary','floorZone','emergency'].forEach(k => {
+    const el = document.getElementById(k);
+    if (el) state[k] = el.value;
+  });
+}
+
+// ═══════════════════════════════════════
+//  TEMPLATE
+// ═══════════════════════════════════════
+function refreshTmplList() {
+  const list = document.getElementById('tmplList');
+  const keys = Object.keys(templates);
+  if (!keys.length) { list.innerHTML = '<div class="empty-tmpl">保存済みテンプレートはありません</div>'; return; }
+  list.innerHTML = keys.map(k => `
+    <div class="tmpl-item">
+      <div class="ti" onclick="loadTmpl('${k}')">
+        <div class="tn">${esc(k)}</div>
+        <div class="td">${esc(templates[k]._savedAt||'')}</div>
+      </div>
+      <button class="tmpl-del" onclick="delTmpl('${k}')">🗑</button>
+    </div>`).join('');
+}
+
+function loadTmpl(k) {
+  state = JSON.parse(JSON.stringify(templates[k]));
+  if (!state.connections) state.connections = [];
+  loadStateToUI();
+  showScreen('sEditor');
+  showTab('tDC', document.querySelector('.tab-btn'));
+}
+
+function delTmpl(k) {
+  if (!confirm(`"${k}" を削除しますか？`)) return;
+  delete templates[k]; localStorage.setItem('wpt_v2', JSON.stringify(templates));
+  refreshTmplList();
+}
+
+function saveTemplate() {
+  readFieldsToState();
+  const name = prompt('テンプレート名:', state.dcName || '作業計画書');
+  if (!name) return;
+  const copy = JSON.parse(JSON.stringify(state));
+  copy._savedAt = new Date().toLocaleString('ja-JP');
+  templates[name] = copy;
+  localStorage.setItem('wpt_v2', JSON.stringify(templates));
+
+  // JSONファイルとしてもダウンロード
+  const blob = new Blob([JSON.stringify(copy, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.json';
+  a.click();
+  toast(`"${name}" として保存しました`);
+}
+
+// ═══════════════════════════════════════
+//  CHECKLIST
+// ═══════════════════════════════════════
+function renderCL() {
+  document.getElementById('clItems').innerHTML = (state.checklist||[]).map((item,i) => `
+    <div class="cl-item">
+      <span style="font-size:18px">□</span>
+      <input type="text" value="${esc(item.name)}" placeholder="持ち物名" oninput="state.checklist[${i}].name=this.value">
+      <input type="text" class="qty" value="${esc(item.qty)}" placeholder="数量" oninput="state.checklist[${i}].qty=this.value">
+      <button class="cl-del" onclick="state.checklist.splice(${i},1);renderCL()">✕</button>
+    </div>`).join('');
+}
+function addCL() { state.checklist.push({name:'',qty:'1個'}); renderCL(); }
+
+// ═══════════════════════════════════════
+//  STEPS
+// ═══════════════════════════════════════
+function renderSteps() {
+  document.getElementById('stItems').innerHTML = (state.steps||[]).map((s,i) => `
+    <div class="step-row">
+      <div class="step-num">${i+1}</div>
+      <textarea placeholder="手順を入力..." oninput="state.steps[${i}].text=this.value">${esc(s.text)}</textarea>
+      <button class="step-del" onclick="state.steps.splice(${i},1);for(let j=0;j<state.steps.length;j++)state.steps[j].order=j+1;renderSteps()">✕</button>
+    </div>`).join('');
+}
+function addStep() { state.steps.push({order:state.steps.length+1,text:''}); renderSteps(); }
+
+// ═══════════════════════════════════════
+//  RACKS
+// ═══════════════════════════════════════
+function renderRacks() {
+  document.getElementById('rkItems').innerHTML = (state.racks||[]).map((r,i) => `
+    <div class="rack-card">
+      <div class="rc-hdr"><span>ラック ${i+1}</span><button class="rack-del" onclick="state.racks.splice(${i},1);renderRacks()">✕</button></div>
+      <div class="mini-field"><label>ラック番号</label><input value="${esc(r.id)}" placeholder="例: R-A01" oninput="state.racks[${i}].id=this.value"></div>
+      <div class="mini-field"><label>名称 / 用途</label><input value="${esc(r.name)}" placeholder="例: WEBサーバ群" oninput="state.racks[${i}].name=this.value"></div>
+      <div class="mini-field"><label>メモ</label><textarea rows="2" oninput="state.racks[${i}].memo=this.value">${esc(r.memo)}</textarea></div>
+      ${renderPhotoArea('rack',i,r.photos||[])}
+    </div>`).join('');
+}
+function addRack() { state.racks.push({id:'',name:'',memo:'',photos:[]}); renderRacks(); }
+
+// ═══════════════════════════════════════
+//  DEVICES
+// ═══════════════════════════════════════
+function renderDevices() {
+  document.getElementById('dvItems').innerHTML = (state.devices||[]).map((d,i) => `
+    <div class="rack-card">
+      <div class="rc-hdr"><span>デバイス ${i+1}</span><button class="rack-del" onclick="state.devices.splice(${i},1);renderDevices()">✕</button></div>
+      <div class="mini-field"><label>デバイス名</label><input value="${esc(d.name)}" placeholder="例: SW-CORE-01" oninput="state.devices[${i}].name=this.value"></div>
+      <div class="mini-field"><label>型番 / シリアル</label><input value="${esc(d.model)}" placeholder="例: Catalyst 9300" oninput="state.devices[${i}].model=this.value"></div>
+      <div class="mini-field"><label>ポート情報</label><input value="${esc(d.port)}" placeholder="例: Gi0/1, Gi0/2" oninput="state.devices[${i}].port=this.value"></div>
+      <div class="mini-field"><label>備考</label><textarea rows="2" oninput="state.devices[${i}].memo=this.value">${esc(d.memo)}</textarea></div>
+      ${renderPhotoArea('device',i,d.photos||[])}
+    </div>`).join('');
+}
+function addDevice() { state.devices.push({name:'',model:'',port:'',memo:'',photos:[]}); renderDevices(); }
+
+// ═══════════════════════════════════════
+//  CONNECTIONS
+// ═══════════════════════════════════════
+function renderLinks() {
+  const devNames = (state.devices||[]).map(d=>d.name).filter(n=>n);
+  const opts = devNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  document.getElementById('lkItems').innerHTML = (state.connections||[]).map((l,i) => `
+    <div class="link-card">
+      <div class="link-hdr"><span>接続 ${i+1}</span><button class="rack-del" onclick="state.connections.splice(${i},1);renderLinks()">✕</button></div>
+      <div class="link-grid">
+        <div class="mini-field"><label>デバイスA</label>
+          <input value="${esc(l.deviceA)}" list="devList${i}a" oninput="state.connections[${i}].deviceA=this.value">
+          <datalist id="devList${i}a">${opts}</datalist>
+        </div>
+        <div class="mini-field"><label>ポートA</label><input value="${esc(l.portA)}" placeholder="例: Gi0/1" oninput="state.connections[${i}].portA=this.value"></div>
+        <div class="mini-field"><label>デバイスB</label>
+          <input value="${esc(l.deviceB)}" list="devList${i}b" oninput="state.connections[${i}].deviceB=this.value">
+          <datalist id="devList${i}b">${opts}</datalist>
+        </div>
+        <div class="mini-field"><label>ポートB</label><input value="${esc(l.portB)}" placeholder="例: Gi0/2" oninput="state.connections[${i}].portB=this.value"></div>
+      </div>
+      <div class="mini-field" style="margin-top:8px"><label>備考（ケーブル種別等）</label><input value="${esc(l.memo)}" placeholder="例: CAT6" oninput="state.connections[${i}].memo=this.value"></div>
+    </div>`).join('');
+}
+function addLink() { state.connections.push({deviceA:'',portA:'',deviceB:'',portB:'',memo:''}); renderLinks(); }
+
+// ═══════════════════════════════════════
+//  PHOTO
+// ═══════════════════════════════════════
+function renderPhotoArea(sec, idx, photos) {
+  const thumbs = photos.map((p,pi) => `
+    <div class="photo-thumb">
+      <img src="${p.src}" alt="">
+      <button class="pt-ann" onclick="openAnn('${sec}',${idx},${pi})">注釈</button>
+      <button class="pt-del" onclick="delPhoto('${sec}',${idx},${pi})">✕</button>
+    </div>`).join('');
+  return `
+    <div style="margin-top:8px"><label class="mini-field" style="font-size:11px;font-weight:700;color:var(--muted)">写真</label></div>
+    <div class="photo-scroll">
+      ${thumbs}
+      <label class="photo-add">
+        <span>📷</span>追加
+        <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhoto(event,'${sec}',${idx})">
+      </label>
+    </div>`;
+}
+
+function handlePhoto(event, sec, idx) {
+  const files = Array.from(event.target.files);
+  const arr = sec==='rack' ? state.racks : state.devices;
+  if (!arr[idx].photos) arr[idx].photos=[];
+  let loaded=0;
+  files.forEach(f=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      arr[idx].photos.push({src:e.target.result,ann:null});
+      loaded++;
+      if(loaded===files.length) sec==='rack'?renderRacks():renderDevices();
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+function delPhoto(sec,idx,pi){
+  const arr=sec==='rack'?state.racks:state.devices;
+  arr[idx].photos.splice(pi,1);
+  sec==='rack'?renderRacks():renderDevices();
+}
+
+// ═══════════════════════════════════════
+//  ANNOTATION
+// ═══════════════════════════════════════
+let annCtx,annCanvas,annImg,annTool='pen',annHistory=[],annDrawing=false,annStart={};
+let curAnnTarget=null;
+
+function openAnn(sec,idx,pi){
+  curAnnTarget={sec,idx,pi};
+  const arr=sec==='rack'?state.racks:state.devices;
+  const photo=arr[idx].photos[pi];
+  const modal=document.getElementById('annModal');
+  modal.classList.add('open');
+  annCanvas=document.getElementById('annCanvas');
+  annCtx=annCanvas.getContext('2d');
+  annHistory=[];
+  const img=new Image();
+  img.onload=()=>{
+    const maxW=Math.min(window.innerWidth-16,600);
+    const scale=Math.min(1,maxW/img.width);
+    annCanvas.width=img.width*scale; annCanvas.height=img.height*scale;
+    annCtx.drawImage(img,0,0,annCanvas.width,annCanvas.height);
+    annImg=annCtx.getImageData(0,0,annCanvas.width,annCanvas.height);
+    annHistory=[annImg];
+  };
+  img.src=photo.src;
+  setupAnn();
+}
+function closeAnn(){document.getElementById('annModal').classList.remove('open');}
+function applyAnn(){
+  if(!curAnnTarget)return;
+  const{sec,idx,pi}=curAnnTarget;
+  const arr=sec==='rack'?state.racks:state.devices;
+  arr[idx].photos[pi].src=annCanvas.toDataURL('image/png');
+  closeAnn();
+  sec==='rack'?renderRacks():renderDevices();
+  toast('注釈を適用しました');
+}
+function setAnnTool(t){annTool=t;document.querySelectorAll('.ann-tool').forEach(b=>b.classList.remove('active'));const m={pen:'aTpen',arrow:'aTarrow',rect:'aTrect',text:'aTtext'};if(m[t])document.getElementById(m[t]).classList.add('active');}
+function undoAnn(){if(annHistory.length>1){annHistory.pop();annCtx.putImageData(annHistory[annHistory.length-1],0,0);}}
+function clearAnn(){if(annHistory.length>0){annCtx.putImageData(annHistory[0],0,0);annHistory=[annHistory[0]];}}
+function setupAnn(){
+  const getP=e=>{const r=annCanvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(annCanvas.width/r.width),y:(src.clientY-r.top)*(annCanvas.height/r.height)};};
+  annCanvas.onmousedown=annCanvas.ontouchstart=e=>{
+    e.preventDefault();annDrawing=true;const pt=getP(e);annStart=pt;
+    if(annTool==='text'){annDrawing=false;const txt=prompt('テキスト:','');if(txt){saveAnnState();annCtx.font=`${14+parseInt(document.getElementById('annSize').value)*2}px sans-serif`;annCtx.fillStyle=document.getElementById('annColor').value;annCtx.fillText(txt,pt.x,pt.y);annHistory.push(annCtx.getImageData(0,0,annCanvas.width,annCanvas.height));}return;}
+    if(annTool==='pen')saveAnnState();
+    annCtx.beginPath();annCtx.moveTo(pt.x,pt.y);
+  };
+  annCanvas.onmousemove=annCanvas.ontouchmove=e=>{
+    if(!annDrawing)return;e.preventDefault();const pt=getP(e);
+    annCtx.strokeStyle=document.getElementById('annColor').value;annCtx.lineWidth=parseInt(document.getElementById('annSize').value);annCtx.lineCap='round';
+    if(annTool==='pen'){annCtx.lineTo(pt.x,pt.y);annCtx.stroke();}
+    else{annCtx.putImageData(annHistory[annHistory.length-1],0,0);annCtx.beginPath();if(annTool==='rect')annCtx.strokeRect(annStart.x,annStart.y,pt.x-annStart.x,pt.y-annStart.y);else if(annTool==='arrow')drawArrow(annCtx,annStart.x,annStart.y,pt.x,pt.y);}
+  };
+  annCanvas.onmouseup=annCanvas.ontouchend=e=>{
+    if(!annDrawing)return;annDrawing=false;const pt=getP(e||{});
+    if(annTool!=='pen'&&annTool!=='text'){saveAnnState();annCtx.putImageData(annHistory[annHistory.length-2],0,0);annCtx.strokeStyle=document.getElementById('annColor').value;annCtx.lineWidth=parseInt(document.getElementById('annSize').value);if(annTool==='rect')annCtx.strokeRect(annStart.x,annStart.y,pt.x-annStart.x,pt.y-annStart.y);else if(annTool==='arrow')drawArrow(annCtx,annStart.x,annStart.y,pt.x,pt.y);}
+    annHistory.push(annCtx.getImageData(0,0,annCanvas.width,annCanvas.height));
+  };
+}
+function saveAnnState(){annHistory.push(annCtx.getImageData(0,0,annCanvas.width,annCanvas.height));}
+function drawArrow(ctx,x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();const ang=Math.atan2(y2-y1,x2-x1);const hs=14;ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(ang-Math.PI/6),y2-hs*Math.sin(ang-Math.PI/6));ctx.lineTo(x2-hs*Math.cos(ang+Math.PI/6),y2-hs*Math.sin(ang+Math.PI/6));ctx.closePath();ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
+
+// ═══════════════════════════════════════
+//  PREVIEW
+// ═══════════════════════════════════════
+function showPreview(){
+  readFieldsToState();
+  document.getElementById('previewDoc').innerHTML=buildPreviewHTML();
+  showScreen('sPreview');
+}
+function buildPreviewHTML(){
+  const s=state;
+  const dt=s.workDate?new Date(s.workDate).toLocaleString('ja-JP'):'未設定';
+  let h=`<div class="pv-title">作業計画書</div>`;
+  h+=`<table class="pv-table">
+    <tr><td>DC / 局舎名</td><td>${esc(s.dcName)||'—'}</td></tr>
+    <tr><td>作業日時</td><td>${dt}</td></tr>
+    <tr><td>作業者</td><td>${esc(s.worker)||'—'}</td></tr>
+    <tr><td>承認者</td><td>${esc(s.approver)||'—'}</td></tr>
+    <tr><td>フロア / ゾーン</td><td>${esc(s.floorZone)||'—'}</td></tr>
+    <tr><td>緊急連絡先</td><td>${esc(s.emergency)||'—'}</td></tr>
+    <tr><td>作業概要</td><td>${esc(s.workSummary)||'—'}</td></tr>
+  </table>`;
+  if(s.checklist?.length){
+    h+=`<div class="pv-sec"><div class="pv-sec-t">🎒 持ち物チェックリスト</div><div class="pv-sec-b">
+      ${s.checklist.map(c=>`<div class="pv-cl-row"><span>□</span><span style="flex:1">${esc(c.name)}</span><span style="color:var(--muted)">${esc(c.qty)}</span></div>`).join('')}
+    </div></div>`;
+  }
+  if(s.steps?.length){
+    h+=`<div class="pv-sec"><div class="pv-sec-t">📝 作業手順</div><div class="pv-sec-b">
+      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.6">${esc(st.text).replace(/\n/g,'<br>')}</div></div>`).join('')}
+    </div></div>`;
+  }
+  if(s.racks?.length){
+    h+=`<div class="pv-sec"><div class="pv-sec-t">🗄️ ラック情報</div><div class="pv-sec-b">
+      ${s.racks.map(r=>`<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bg)"><b>${esc(r.id)}</b> ${esc(r.name)}<br><small style="color:var(--muted)">${esc(r.memo)}</small>
+      ${(r.photos||[]).length?`<div class="pv-photo-grid" style="margin-top:6px">${r.photos.map(p=>`<img src="${p.src}">`).join('')}</div>`:''}</div>`).join('')}
+    </div></div>`;
+  }
+  if(s.devices?.length){
+    h+=`<div class="pv-sec"><div class="pv-sec-t">💻 デバイス情報</div><div class="pv-sec-b">
+      ${s.devices.map(d=>`<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bg)"><b>${esc(d.name)}</b> <small style="color:var(--muted)">${esc(d.model)}</small><br>Port: ${esc(d.port)||'—'}<br><small>${esc(d.memo)}</small>
+      ${(d.photos||[]).length?`<div class="pv-photo-grid" style="margin-top:6px">${d.photos.map(p=>`<img src="${p.src}">`).join('')}</div>`:''}</div>`).join('')}
+    </div></div>`;
+  }
+  if(s.connections?.length){
+    h+=`<div class="pv-sec"><div class="pv-sec-t">🔗 接続情報</div><div class="pv-sec-b">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr style="background:var(--navy);color:#fff"><th style="padding:6px;text-align:left">デバイスA</th><th style="padding:6px;text-align:left">ポートA</th><th style="padding:6px;text-align:left">デバイスB</th><th style="padding:6px;text-align:left">ポートB</th><th style="padding:6px;text-align:left">備考</th></tr>
+        ${s.connections.map(l=>`<tr><td style="padding:6px;border:1px solid var(--border)">${esc(l.deviceA)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.portA)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.deviceB)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.portB)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.memo)}</td></tr>`).join('')}
+      </table>
+    </div></div>`;
+  }
+  return h;
+}
+
+// ═══════════════════════════════════════
+//  PDF
+// ═══════════════════════════════════════
+async function exportPDF(){
+  readFieldsToState();
+  const doc=document.getElementById('previewDoc');
+  doc.innerHTML=buildPreviewHTML();
+  toast('PDF生成中...');
+  try{
+    const canvas=await html2canvas(doc,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
+    const imgData=canvas.toDataURL('image/png');
+    const{jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+    const pW=pdf.internal.pageSize.getWidth();
+    const pH=pdf.internal.pageSize.getHeight();
+    const imgW=pW, imgH=canvas.height*imgW/canvas.width;
+    let yPos=0,rem=imgH;
+    while(rem>0){
+      if(yPos>0)pdf.addPage();
+      const sliceH=Math.min(pH,rem);
+      const srcY=yPos*canvas.height/imgH, srcH=sliceH*canvas.height/imgH;
+      const sc=document.createElement('canvas');
+      sc.width=canvas.width;sc.height=srcH;
+      sc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      pdf.addImage(sc.toDataURL('image/png'),'PNG',0,0,imgW,sliceH);
+      yPos+=sliceH;rem-=sliceH;
+    }
+    const fname=`作業計画書_${state.dcName||'無題'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
+    pdf.save(fname);
+    toast('PDFを出力しました！');
+  }catch(e){console.error(e);toast('PDF生成に失敗しました');}
+}
+
+// ═══════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+
+// ═══════════════════════════════════════
+//  PWA: SERVICE WORKER
+// ═══════════════════════════════════════
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(()=>console.log('SW registered'));
+}
+
+// INIT
+refreshTmplList();
+</script>
+</body>
+</html>
