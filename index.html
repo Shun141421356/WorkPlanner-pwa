@@ -177,35 +177,18 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
 /* プレビューに接続マップ画像 */
 .pv-map-img{width:100%;border-radius:8px;border:1px solid var(--border);margin-top:8px}
 
-/* 印刷用：画面外に配置して常にレンダリング済み状態にする */
+/* 印刷用（一時的にbodyに追加して使用） */
 #printFrame{
-  position:fixed; left:-9999px; top:0;
-  width:794px; /* A4 96dpi相当 */
+  position:absolute;
+  left:0; top:0;
+  width:794px;
   background:#fff;
   padding:32px;
   font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;
   font-size:13px;
   color:#1a1f2e;
-  z-index:-1;
-  pointer-events:none;
+  visibility:hidden;
 }
-/* printFrame内のスタイル */
-#printFrame .pv-title{text-align:center;font-size:22px;font-weight:700;color:#1a2540;border-bottom:3px solid #2e7de0;padding-bottom:10px;margin-bottom:20px}
-#printFrame .pv-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px}
-#printFrame .pv-table td{border:1px solid #d4d8e8;padding:7px 10px}
-#printFrame .pv-table td:first-child{background:#1a2540;color:#fff;font-weight:700;width:30%}
-#printFrame .pv-sec{margin-bottom:20px}
-#printFrame .pv-sec-t{background:#1a2540;color:#fff;padding:7px 12px;font-size:13px;font-weight:700;border-radius:4px 4px 0 0}
-#printFrame .pv-sec-b{border:1px solid #d4d8e8;border-top:none;padding:12px;border-radius:0 0 4px 4px}
-#printFrame .pv-step{display:flex;gap:10px;margin-bottom:8px;align-items:flex-start}
-#printFrame .pv-step-n{background:#2e7de0;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;line-height:24px;text-align:center}
-#printFrame .pv-cl-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f6}
-#printFrame table.conn-table{width:100%;border-collapse:collapse;font-size:12px}
-#printFrame table.conn-table th{background:#1a2540;color:#fff;padding:6px 8px;text-align:left}
-#printFrame table.conn-table td{border:1px solid #d4d8e8;padding:6px 8px}
-#printFrame .pv-photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-#printFrame .pv-photo-grid img{width:160px;height:120px;object-fit:contain;border:1px solid #d4d8e8;border-radius:4px}
-#printFrame .map-img{width:100%;border-radius:4px;border:1px solid #d4d8e8;margin-top:8px}
 
 @media(min-width:600px){
   .home-cards{max-width:500px;margin:0 auto}
@@ -217,7 +200,6 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
 <body>
 
 <div id="toast"></div>
-<div id="printFrame"></div>
 
 <!-- ══ SCREEN: HOME ══ -->
 <div id="sHome" class="screen active">
@@ -840,38 +822,47 @@ async function exportPDF(){
   toast('PDF生成中...');
   try {
     const mapImg = await getMapImage();
-    const frame  = document.getElementById('printFrame');
 
-    // ── セクションごとに個別キャプチャして改ページを制御 ──
-    // printFrameにセクション単位のdivを入れてhtmlをキャプチャする
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
-    const PW=210, PH=297, ML=0;
+    const PW=210, PH=297;
     let firstPage = true;
 
-    // セクションHTMLのリスト（各要素が1キャプチャ単位）
     const sections = buildSections(mapImg);
 
     for (const secHTML of sections) {
+      // セクションごとに動的にdivを生成してbodyの下部に追加
+      const frame = document.createElement('div');
+      frame.style.cssText = [
+        'position:absolute',
+        'left:0',
+        'top:' + (document.documentElement.scrollHeight + 200) + 'px',
+        'width:794px',
+        'background:#fff',
+        'padding:32px',
+        'font-family:Hiragino Kaku Gothic ProN,Meiryo,sans-serif',
+        'font-size:13px',
+        'color:#1a1f2e'
+      ].join(';');
       frame.innerHTML = secHTML;
+      document.body.appendChild(frame);
 
-      // 画像のロードを待つ
+      // 画像ロード待ち
       const imgs = frame.querySelectorAll('img');
       await Promise.all(Array.from(imgs).map(img =>
         img.complete ? Promise.resolve() :
         new Promise(r => { img.onload=r; img.onerror=r; })
       ));
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 80));
 
       const canvas = await html2canvas(frame, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
-        width: 794,
-        windowWidth: 794 + 9999,
-        scrollX: 9999
+        width: 794
       });
+      document.body.removeChild(frame);
 
       const imgW = PW;
       const imgH = canvas.height * imgW / canvas.width;
@@ -893,7 +884,6 @@ async function exportPDF(){
       }
     }
 
-    frame.innerHTML = '';
     const fname = `作業計画書_${state.dcName||'無題'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
     pdf.save(fname);
     toast('PDFを出力しました！');
