@@ -160,6 +160,23 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
 #toast{position:fixed;bottom:calc(var(--safe-bot)+90px);left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;border-radius:20px;padding:10px 22px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .3s;z-index:300;white-space:nowrap}
 #toast.show{opacity:1}
 
+/* ── 接続マップ ── */
+.map-screen{display:none;flex-direction:column;height:calc(100dvh - 56px - 46px)}
+.map-screen.active-map{display:flex}
+.map-toolbar{background:var(--card);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;gap:8px;align-items:center;flex-shrink:0}
+.map-hint{font-size:11px;color:var(--muted);flex:1}
+.map-wrap{flex:1;overflow:auto;background:#e8eaf0;position:relative;-webkit-overflow-scrolling:touch}
+.map-canvas-wrap{position:relative;min-width:100%;min-height:100%}
+#mapSvg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+.dev-box{position:absolute;width:150px;cursor:grab;user-select:none;border-radius:8px;overflow:hidden;box-shadow:0 3px 10px rgba(26,37,64,.18);touch-action:none}
+.dev-box:active{cursor:grabbing;box-shadow:0 6px 20px rgba(26,37,64,.28)}
+.dev-box-hdr{background:var(--navy);color:#fff;padding:7px 10px;font-size:12px;font-weight:700;text-align:center}
+.dev-box-body{background:var(--card);padding:6px 8px;font-size:11px;color:var(--muted);text-align:center;line-height:1.4}
+.map-legend{padding:8px 16px;font-size:11px;color:var(--muted);flex-shrink:0;background:var(--card);border-top:1px solid var(--border)}
+
+/* プレビューに接続マップ画像 */
+.pv-map-img{width:100%;border-radius:8px;border:1px solid var(--border);margin-top:8px}
+
 @media(min-width:600px){
   .home-cards{max-width:500px;margin:0 auto}
   .editor-body{max-width:680px;margin:0 auto}
@@ -257,6 +274,24 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
   <div id="tLK" class="editor-body" style="display:none">
     <div id="lkItems"></div>
     <button class="add-btn" onclick="addLink()">＋ 接続を追加</button>
+    <div style="height:12px"></div>
+    <button class="btn btn-secondary" style="width:100%;padding:14px" onclick="openMapScreen()">🗺️ 接続マップを表示・編集</button>
+  </div>
+
+  <!-- 接続マップスクリーン（エディタ内） -->
+  <div id="tMAP" class="map-screen" style="display:none">
+    <div class="map-toolbar">
+      <button class="btn btn-outline btn-sm" onclick="closeMapScreen()">← 戻る</button>
+      <button class="btn btn-outline btn-sm" onclick="resetMapPositions()">↺ リセット</button>
+      <span class="map-hint">ドラッグで自由に移動</span>
+    </div>
+    <div class="map-wrap" id="mapWrap">
+      <div class="map-canvas-wrap" id="mapCanvasWrap" style="width:1200px;height:800px">
+        <svg id="mapSvg" width="1200" height="800"></svg>
+        <div id="mapBoxes"></div>
+      </div>
+    </div>
+    <div class="map-legend">── 接続線　端のラベルはポート名　中央は備考</div>
   </div>
 
   <div class="bottom-bar">
@@ -325,6 +360,8 @@ function showTab(id, btn) {
   ['tDC','tCL','tST','tRK','tDV','tLK'].forEach(t => {
     document.getElementById(t).style.display = t === id ? 'block' : 'none';
   });
+  // マップスクリーンを非表示
+  document.getElementById('tMAP').style.display = 'none';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   if (id === 'tCL') renderCL();
@@ -620,12 +657,36 @@ function drawArrow(ctx,x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo
 // ═══════════════════════════════════════
 //  PREVIEW
 // ═══════════════════════════════════════
-function showPreview(){
+async function showPreview(){
   readFieldsToState();
-  document.getElementById('previewDoc').innerHTML=buildPreviewHTML();
+
+  // マップが開かれていた場合はキャプチャ
+  let mapImg = null;
+  if ((state.connections||[]).length > 0 && (state.devices||[]).some(d=>d.name)) {
+    // マップを一時的にレンダリングしてキャプチャ
+    const mapDiv = document.getElementById('tMAP');
+    const wasHidden = mapDiv.style.display === 'none';
+    if (wasHidden) {
+      mapDiv.style.visibility = 'hidden';
+      mapDiv.style.display = 'flex';
+      mapDiv.style.position = 'fixed';
+      mapDiv.style.top = '-9999px';
+      renderMap();
+      await new Promise(r => setTimeout(r, 200));
+    }
+    mapImg = await captureMapImage();
+    if (wasHidden) {
+      mapDiv.style.display = 'none';
+      mapDiv.style.visibility = '';
+      mapDiv.style.position = '';
+      mapDiv.style.top = '';
+    }
+  }
+
+  document.getElementById('previewDoc').innerHTML = buildPreviewHTML(mapImg);
   showScreen('sPreview');
 }
-function buildPreviewHTML(){
+function buildPreviewHTML(mapImg){
   const s=state;
   const dt=s.workDate?new Date(s.workDate).toLocaleString('ja-JP'):'未設定';
   let h=`<div class="pv-title">作業計画書</div>`;
@@ -667,6 +728,10 @@ function buildPreviewHTML(){
         ${s.connections.map(l=>`<tr><td style="padding:6px;border:1px solid var(--border)">${esc(l.deviceA)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.portA)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.deviceB)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.portB)}</td><td style="padding:6px;border:1px solid var(--border)">${esc(l.memo)}</td></tr>`).join('')}
       </table>
     </div></div>`;
+  }
+  // 接続マップ画像
+  if (mapImg) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">🗺️ 接続マップ</div><div class="pv-sec-b"><img class="pv-map-img" src="${mapImg}"></div></div>`;
   }
   return h;
 }
@@ -717,7 +782,216 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').then(()=>console.log('SW registered'));
 }
 
-// INIT
+// ═══════════════════════════════════════
+//  CONNECTION MAP
+// ═══════════════════════════════════════
+const BOX_W = 150, BOX_H = 56;
+let mapPositions = {}; // デバイス名 → {x,y}
+
+function openMapScreen() {
+  // 全タブを非表示
+  ['tDC','tCL','tST','tRK','tDV','tLK'].forEach(t =>
+    document.getElementById(t).style.display = 'none');
+  const mapDiv = document.getElementById('tMAP');
+  mapDiv.style.display = 'flex';
+  mapDiv.style.flexDirection = 'column';
+  mapDiv.style.height = 'calc(100dvh - 56px - 46px)';
+  renderMap();
+}
+
+function closeMapScreen() {
+  document.getElementById('tMAP').style.display = 'none';
+  // 接続タブに戻る
+  const lkTab = document.querySelector('.tab-btn:last-of-type');
+  showTab('tLK', lkTab);
+}
+
+function resetMapPositions() {
+  mapPositions = {};
+  renderMap();
+}
+
+function defaultPos(devices) {
+  const COLS = 3, H_GAP = 80, V_GAP = 60, MARGIN = 20;
+  devices.forEach((d, i) => {
+    if (!mapPositions[d.name]) {
+      const col = i % COLS, row = Math.floor(i / COLS);
+      mapPositions[d.name] = {
+        x: MARGIN + col * (BOX_W + H_GAP),
+        y: MARGIN + row * (BOX_H + V_GAP)
+      };
+    }
+  });
+}
+
+function renderMap() {
+  const devices = (state.devices || []).filter(d => d.name);
+  defaultPos(devices);
+
+  // キャンバスサイズを自動調整
+  let maxX = 600, maxY = 400;
+  devices.forEach(d => {
+    const p = mapPositions[d.name];
+    if (p) { maxX = Math.max(maxX, p.x + BOX_W + 40); maxY = Math.max(maxY, p.y + BOX_H + 40); }
+  });
+  const wrap = document.getElementById('mapCanvasWrap');
+  wrap.style.width = maxX + 'px';
+  wrap.style.height = maxY + 'px';
+  const svg = document.getElementById('mapSvg');
+  svg.setAttribute('width', maxX);
+  svg.setAttribute('height', maxY);
+
+  // ボックス描画
+  const boxesDiv = document.getElementById('mapBoxes');
+  boxesDiv.innerHTML = '';
+  devices.forEach(dev => {
+    const pos = mapPositions[dev.name];
+    const box = document.createElement('div');
+    box.className = 'dev-box';
+    box.style.left = pos.x + 'px';
+    box.style.top  = pos.y + 'px';
+    box.innerHTML = `
+      <div class="dev-box-hdr">${esc(dev.name)}</div>
+      <div class="dev-box-body">${esc(dev.model)||'&nbsp;'}<br><span style="color:var(--accent)">${esc(dev.port)||''}</span></div>`;
+    makeDraggable(box, dev.name);
+    boxesDiv.appendChild(box);
+  });
+
+  drawMapLines();
+}
+
+function drawMapLines() {
+  const svg = document.getElementById('mapSvg');
+  svg.innerHTML = '';
+
+  // 矢印マーカー定義
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  svg.appendChild(defs);
+
+  const conns = state.connections || [];
+  conns.forEach(link => {
+    const posA = mapPositions[link.deviceA];
+    const posB = mapPositions[link.deviceB];
+    if (!posA || !posB) return;
+
+    const cx1 = posA.x + BOX_W/2, cy1 = posA.y + BOX_H/2;
+    const cx2 = posB.x + BOX_W/2, cy2 = posB.y + BOX_H/2;
+
+    // 方向ベクトル
+    const dx = cx2-cx1, dy = cy2-cy1;
+    const len = Math.sqrt(dx*dx+dy*dy);
+    if (len < 1) return;
+    const ux = dx/len, uy = dy/len;
+
+    // ボックス縁の交点
+    function edgePt(cx, cy, sx, sy, offset) {
+      const hw = BOX_W/2, hh = BOX_H/2;
+      const tX = sx !== 0 ? (sx > 0 ? hw : -hw)/sx : Infinity;
+      const tY = sy !== 0 ? (sy > 0 ? hh : -hh)/sy : Infinity;
+      const t = Math.min(Math.abs(tX), Math.abs(tY));
+      return [cx + sx*(t+offset), cy + sy*(t+offset)];
+    }
+
+    const OFFSET = 12;
+    const [lx1,ly1] = edgePt(cx1,cy1, ux, uy, OFFSET);
+    const [lx2,ly2] = edgePt(cx2,cy2,-ux,-uy, OFFSET);
+
+    // 接続線
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',lx1); line.setAttribute('y1',ly1);
+    line.setAttribute('x2',lx2); line.setAttribute('y2',ly2);
+    line.setAttribute('stroke','#2e7de0'); line.setAttribute('stroke-width','2');
+    svg.appendChild(line);
+
+    // ポートAラベル
+    if (link.portA) drawSvgLabel(svg, link.portA, lx1, ly1, '#1a2540');
+    // ポートBラベル
+    if (link.portB) drawSvgLabel(svg, link.portB, lx2, ly2, '#1a2540');
+    // 備考（中央）
+    const midDist = Math.sqrt((lx2-lx1)**2+(ly2-ly1)**2);
+    if (link.memo && midDist > 40)
+      drawSvgLabel(svg, link.memo, (lx1+lx2)/2, (ly1+ly2)/2-10, '#8a6020');
+  });
+}
+
+function drawSvgLabel(svg, text, x, y, color) {
+  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+  const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('x', x); t.setAttribute('y', y);
+  t.setAttribute('font-size','10'); t.setAttribute('font-family','Meiryo UI,sans-serif');
+  t.setAttribute('fill', color); t.setAttribute('text-anchor','middle');
+  t.setAttribute('dominant-baseline','middle');
+  t.textContent = text;
+  // 背景
+  const bbox = {width: text.length*6+8, height:14};
+  const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  rect.setAttribute('x', x - bbox.width/2);
+  rect.setAttribute('y', y - bbox.height/2);
+  rect.setAttribute('width', bbox.width);
+  rect.setAttribute('height', bbox.height);
+  rect.setAttribute('fill','rgba(232,241,252,0.92)');
+  rect.setAttribute('rx','3');
+  g.appendChild(rect); g.appendChild(t);
+  svg.appendChild(g);
+}
+
+function makeDraggable(el, devName) {
+  let startX, startY, startLeft, startTop, dragging = false;
+
+  function onStart(e) {
+    e.preventDefault();
+    dragging = true;
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    startLeft = parseInt(el.style.left); startTop = parseInt(el.style.top);
+    el.style.zIndex = 10;
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const pt = e.touches ? e.touches[0] : e;
+    const nx = Math.max(0, startLeft + (pt.clientX - startX));
+    const ny = Math.max(0, startTop  + (pt.clientY - startY));
+    el.style.left = nx + 'px';
+    el.style.top  = ny + 'px';
+    mapPositions[devName] = {x: nx, y: ny};
+
+    // キャンバス自動拡張
+    const wrap = document.getElementById('mapCanvasWrap');
+    const svg  = document.getElementById('mapSvg');
+    const newW = Math.max(parseInt(wrap.style.width), nx + BOX_W + 40);
+    const newH = Math.max(parseInt(wrap.style.height), ny + BOX_H + 40);
+    wrap.style.width = newW+'px'; wrap.style.height = newH+'px';
+    svg.setAttribute('width', newW); svg.setAttribute('height', newH);
+
+    drawMapLines(); // 線をリアルタイム更新
+  }
+  function onEnd() { dragging = false; el.style.zIndex = ''; }
+
+  el.addEventListener('mousedown',  onStart);
+  el.addEventListener('touchstart', onStart, {passive:false});
+  document.addEventListener('mousemove',  onMove);
+  document.addEventListener('touchmove',  onMove, {passive:false});
+  document.addEventListener('mouseup',  onEnd);
+  document.addEventListener('touchend', onEnd);
+}
+
+// マップをCanvas画像に変換してBase64で返す（PDF用）
+async function captureMapImage() {
+  const wrap = document.getElementById('mapCanvasWrap');
+  if (!wrap) return null;
+  try {
+    const canvas = await html2canvas(wrap, {
+      scale: 1.5, backgroundColor: '#e8eaf0',
+      width: parseInt(wrap.style.width), height: parseInt(wrap.style.height)
+    });
+    return canvas.toDataURL('image/png');
+  } catch(e) { return null; }
+}
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
 refreshTmplList();
 </script>
 </body>
