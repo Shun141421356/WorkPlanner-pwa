@@ -802,7 +802,7 @@ function buildPreviewHTML(mapImg){
   }
   if(s.steps?.length){
     h+=`<div class="pv-sec"><div class="pv-sec-t">📝 作業手順</div><div class="pv-sec-b">
-      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.6">${esc(st.text).replace(/\n/g,'<br>')}</div></div>`).join('')}
+      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.6">${nl2br(st.text)}</div></div>`).join('')}
     </div></div>`;
   }
   if(s.racks?.length){
@@ -961,8 +961,7 @@ function buildSections(mapImg) {
     sections.push(wrap(`
       <div class="sec-hdr">📝 作業手順</div>
       <div class="sec-body">
-        ${s.steps.map((st,i)=>`<div class="step-row"><div class="step-num">${i+1}</div><div style="flex:1;line-height:1.7">${esc(st.text).replace(/
-/g,'<br>')}</div></div>`).join('')}
+        ${s.steps.map((st,i)=>`<div class="step-row"><div class="step-num">${i+1}</div><div style="flex:1;line-height:1.7">${nl2br(st.text)}</div></div>`).join('')}
       </div>`));
   }
 
@@ -1041,7 +1040,7 @@ function buildPrintHTML(mapImg) {
   }
   if ((s.steps||[]).length) {
     h += `<div class="pv-sec"><div class="pv-sec-t">📝 作業手順</div><div class="pv-sec-b">
-      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.7">${esc(st.text).replace(/\n/g,'<br>')}</div></div>`).join('')}
+      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.7">${nl2br(st.text)}</div></div>`).join('')}
     </div></div>`;
   }
   if ((s.racks||[]).length) {
@@ -1074,6 +1073,7 @@ function buildPrintHTML(mapImg) {
 //  UTILS
 // ═══════════════════════════════════════
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function nl2br(s){return nl2br(s);}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 
 // ═══════════════════════════════════════
