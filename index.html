@@ -733,97 +733,121 @@ function drawArrow(ctx,x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo
 // ═══════════════════════════════════════
 async function showPreview(){
   readFieldsToState();
-  const mapImg = await getMapImage();
+  let mapImg = null;
+  try { mapImg = await getMapImage(); } catch(e) { console.warn('map skip:', e); }
   document.getElementById('previewDoc').innerHTML = buildPreviewHTML(mapImg);
   showScreen('sPreview');
 }
 
-// 接続マップをSVG→Canvas→Base64で取得（非表示でも動作）
+// 接続マップをCanvas描画で生成（外部ライブラリ不使用）
 async function getMapImage() {
-  const conns = state.connections || [];
-  const devs  = (state.devices || []).filter(d => d.name);
-  if (!conns.length || !devs.length) return null;
+  try {
+    const conns = state.connections || [];
+    const devs  = (state.devices || []).filter(d => d && d.name);
+    if (!conns.length || !devs.length) return null;
 
-  // 位置が未設定ならデフォルト配置
-  const pos = Object.assign({}, mapPositions);
-  const COLS=3, HG=80, VG=60, M=20;
-  devs.forEach((d,i) => {
-    if (!pos[d.name]) {
-      pos[d.name] = { x: M + (i%COLS)*(BOX_W+HG), y: M + Math.floor(i/COLS)*(BOX_H+VG) };
-    }
-  });
+    const BW = 150, BH = 56;
+    const COLS = 3, HG = 80, VG = 60, M = 24;
 
-  // キャンバスサイズ計算
-  let W=400, H=300;
-  devs.forEach(d => {
-    const p=pos[d.name];
-    if(p){ W=Math.max(W,p.x+BOX_W+30); H=Math.max(H,p.y+BOX_H+30); }
-  });
+    // デフォルト位置（未設定分のみ）
+    const pos = {};
+    devs.forEach((d, i) => {
+      const saved = mapPositions[d.name];
+      pos[d.name] = saved
+        ? { x: saved.x, y: saved.y }
+        : { x: M + (i % COLS) * (BW + HG), y: M + Math.floor(i / COLS) * (BH + VG) };
+    });
 
-  // Canvasに直接描画
-  const cvs = document.createElement('canvas');
-  cvs.width=W*2; cvs.height=H*2; // Retina
-  const g = cvs.getContext('2d');
-  g.scale(2,2);
-  g.fillStyle='#e8eaf0'; g.fillRect(0,0,W,H);
+    // キャンバスサイズ
+    let W = 500, H = 350;
+    devs.forEach(d => {
+      const p = pos[d.name];
+      W = Math.max(W, p.x + BW + M);
+      H = Math.max(H, p.y + BH + M);
+    });
 
-  // 接続線
-  g.strokeStyle='#2e7de0'; g.lineWidth=2;
-  conns.forEach(link => {
-    const pA=pos[link.deviceA], pB=pos[link.deviceB];
-    if(!pA||!pB) return;
-    const ax=pA.x+BOX_W/2, ay=pA.y+BOX_H/2;
-    const bx=pB.x+BOX_W/2, by=pB.y+BOX_H/2;
-    const dx=bx-ax, dy=by-ay, len=Math.sqrt(dx*dx+dy*dy);
-    if(len<1) return;
-    const ux=dx/len, uy=dy/len;
-    function edge(cx,cy,sx,sy,off){
-      const hw=BOX_W/2,hh=BOX_H/2;
-      const tX=sx?( sx>0?hw:-hw)/sx:Infinity;
-      const tY=sy?( sy>0?hh:-hh)/sy:Infinity;
-      const t=Math.min(Math.abs(tX),Math.abs(tY));
-      return [cx+sx*(t+off), cy+sy*(t+off)];
-    }
-    const [lx1,ly1]=edge(ax,ay, ux, uy,10);
-    const [lx2,ly2]=edge(bx,by,-ux,-uy,10);
-    g.beginPath(); g.moveTo(lx1,ly1); g.lineTo(lx2,ly2); g.stroke();
+    const cvs = document.createElement('canvas');
+    cvs.width  = W * 2;
+    cvs.height = H * 2;
+    const g = cvs.getContext('2d');
+    g.scale(2, 2);
 
-    // ポートラベル
-    function label(txt,x,y,col){
-      const w=txt.length*6+8;
-      g.fillStyle='rgba(232,241,252,0.92)';
-      g.fillRect(x-w/2,y-8,w,16);
-      g.fillStyle=col; g.font='10px sans-serif';
-      g.textAlign='center'; g.textBaseline='middle';
-      g.fillText(txt,x,y);
-    }
-    if(link.portA) label(link.portA,lx1,ly1,'#1a2540');
-    if(link.portB) label(link.portB,lx2,ly2,'#1a2540');
-    const md=Math.sqrt((lx2-lx1)**2+(ly2-ly1)**2);
-    if(link.memo&&md>40) label(link.memo,(ax+bx)/2,(ay+by)/2-10,'#8a6020');
-  });
+    // 背景
+    g.fillStyle = '#e8eaf0';
+    g.fillRect(0, 0, W, H);
 
-  // デバイスボックス
-  devs.forEach(d => {
-    const p=pos[d.name]; if(!p) return;
-    // 影
-    g.fillStyle='rgba(0,0,0,0.10)'; g.fillRect(p.x+3,p.y+3,BOX_W,BOX_H);
-    // 本体
-    g.fillStyle='#e8f1fc'; g.fillRect(p.x,p.y,BOX_W,BOX_H);
-    g.strokeStyle='#1a2540'; g.lineWidth=1.5; g.strokeRect(p.x,p.y,BOX_W,BOX_H);
-    // ヘッダー
-    g.fillStyle='#1a2540'; g.fillRect(p.x,p.y,BOX_W,20);
-    g.fillStyle='#fff'; g.font='bold 11px sans-serif';
-    g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(d.name, p.x+BOX_W/2, p.y+10);
-    // 型番
-    g.fillStyle='#6b7494'; g.font='9px sans-serif';
-    g.fillText(d.model||'', p.x+BOX_W/2, p.y+30);
-    // ポート
-    if(d.port){ g.fillStyle='#2e7de0'; g.fillText('Port: '+d.port, p.x+BOX_W/2, p.y+44); }
-  });
+    // 接続線
+    conns.forEach(link => {
+      const pA = pos[link.deviceA];
+      const pB = pos[link.deviceB];
+      if (!pA || !pB) return;
 
-  return cvs.toDataURL('image/png');
+      const ax = pA.x + BW / 2, ay = pA.y + BH / 2;
+      const bx = pB.x + BW / 2, by = pB.y + BH / 2;
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1) return;
+      const ux = dx / len, uy = dy / len;
+
+      // ボックス縁の交点
+      function edgePt(cx, cy, sx, sy) {
+        const hw = BW / 2, hh = BH / 2;
+        const tx = sx ? (sx > 0 ? hw : -hw) / sx : 1e9;
+        const ty = sy ? (sy > 0 ? hh : -hh) / sy : 1e9;
+        const t  = Math.min(Math.abs(tx), Math.abs(ty)) + 12;
+        return [cx + sx * t, cy + sy * t];
+      }
+      const [lx1, ly1] = edgePt(ax, ay,  ux,  uy);
+      const [lx2, ly2] = edgePt(bx, by, -ux, -uy);
+
+      g.strokeStyle = '#2e7de0'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(lx1, ly1); g.lineTo(lx2, ly2); g.stroke();
+
+      // ラベル描画
+      function lbl(txt, x, y, col) {
+        if (!txt) return;
+        const w = txt.length * 6 + 10;
+        g.fillStyle = 'rgba(232,241,252,0.92)';
+        g.fillRect(x - w / 2, y - 9, w, 17);
+        g.fillStyle = col;
+        g.font = '10px sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(txt, x, y);
+      }
+      lbl(link.portA, lx1, ly1, '#1a2540');
+      lbl(link.portB, lx2, ly2, '#1a2540');
+      const md = Math.sqrt((lx2-lx1)**2 + (ly2-ly1)**2);
+      if (md > 40) lbl(link.memo, (ax+bx)/2, (ay+by)/2 - 12, '#8a6020');
+    });
+
+    // デバイスボックス
+    devs.forEach(d => {
+      const p = pos[d.name];
+      g.fillStyle = 'rgba(0,0,0,0.08)';
+      g.fillRect(p.x + 3, p.y + 3, BW, BH);
+      g.fillStyle = '#e8f1fc';
+      g.fillRect(p.x, p.y, BW, BH);
+      g.strokeStyle = '#1a2540'; g.lineWidth = 1.5;
+      g.strokeRect(p.x, p.y, BW, BH);
+      g.fillStyle = '#1a2540';
+      g.fillRect(p.x, p.y, BW, 20);
+      g.fillStyle = '#fff'; g.font = 'bold 11px sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(d.name, p.x + BW / 2, p.y + 10);
+      g.fillStyle = '#6b7494'; g.font = '9px sans-serif';
+      g.fillText(d.model || '', p.x + BW / 2, p.y + 30);
+      if (d.port) {
+        g.fillStyle = '#2e7de0';
+        g.fillText('Port: ' + d.port, p.x + BW / 2, p.y + 44);
+      }
+    });
+
+    return cvs.toDataURL('image/png');
+  } catch(e) {
+    console.error('getMapImage error:', e);
+    return null;
+  }
 }
 function buildPreviewHTML(mapImg){
   const s=state;
@@ -882,7 +906,8 @@ async function exportPDF(){
   readFieldsToState();
   toast('PDF生成中...');
   try {
-    const mapImg = await getMapImage();
+    let mapImg = null;
+    try { mapImg = await getMapImage(); } catch(e) { console.warn('map skip:', e); }
 
     // 印刷用ルート要素を生成
     let root = document.getElementById('printRoot');
