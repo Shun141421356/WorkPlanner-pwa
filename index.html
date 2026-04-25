@@ -1199,7 +1199,7 @@ function buildPrintHTML(mapImg) {
 //  UTILS
 // ═══════════════════════════════════════
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function nl2br(s){return nl2br(s);}
+function nl2br(s){return esc(s).replace(/\n/g,'<br>');}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 
 // ═══════════════════════════════════════
