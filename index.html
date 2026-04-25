@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="作業計画書">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>作業計画書ツール</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -194,6 +197,64 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
   .home-cards{max-width:500px;margin:0 auto}
   .editor-body{max-width:680px;margin:0 auto}
   .preview-body{max-width:680px;margin:0 auto}
+}
+
+/* ── 印刷用スタイル ── */
+@media print {
+  body > *:not(#printRoot) { display: none !important; }
+  #printRoot {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  #printRoot .p-page {
+    page-break-after: always;
+    padding: 20mm 18mm;
+    font-family: 'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;
+    font-size: 11pt;
+    color: #1a1f2e;
+  }
+  #printRoot .p-page:last-child { page-break-after: avoid; }
+  #printRoot .p-title {
+    text-align: center; font-size: 18pt; font-weight: 700;
+    color: #1a2540; border-bottom: 3px solid #2e7de0;
+    padding-bottom: 8pt; margin-bottom: 16pt;
+  }
+  #printRoot table { width: 100%; border-collapse: collapse; margin-bottom: 12pt; }
+  #printRoot table td, #printRoot table th {
+    border: 1px solid #c8cce0; padding: 5pt 8pt; font-size: 10pt;
+  }
+  #printRoot .meta-table td:first-child {
+    background: #1a2540 !important; color: #fff !important;
+    font-weight: 700; width: 32%; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #printRoot .sec-hdr {
+    background: #1a2540 !important; color: #fff !important;
+    padding: 6pt 10pt; font-weight: 700; font-size: 11pt;
+    border-radius: 4pt 4pt 0 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #printRoot .sec-body {
+    border: 1px solid #c8cce0; border-top: none;
+    padding: 10pt; border-radius: 0 0 4pt 4pt; margin-bottom: 12pt;
+  }
+  #printRoot .step-row { display: flex; gap: 8pt; margin-bottom: 7pt; align-items: flex-start; }
+  #printRoot .step-num {
+    background: #2e7de0 !important; color: #fff !important;
+    width: 18pt; height: 18pt; border-radius: 50%;
+    text-align: center; line-height: 18pt; font-size: 9pt; font-weight: 700;
+    flex-shrink: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #printRoot .cl-row { padding: 4pt 0; border-bottom: 1px solid #eee; display: flex; gap: 8pt; }
+  #printRoot .conn-th {
+    background: #1a2540 !important; color: #fff !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #printRoot img { max-width: 100%; height: auto; }
+  #printRoot .map-img { width: 100%; border: 1px solid #c8cce0; border-radius: 4pt; }
 }
 </style>
 </head>
@@ -823,77 +884,127 @@ async function exportPDF(){
   try {
     const mapImg = await getMapImage();
 
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
-    const PW=210, PH=297;
-    let firstPage = true;
-
-    const sections = buildSections(mapImg);
-
-    for (const secHTML of sections) {
-      // セクションごとに動的にdivを生成してbodyの下部に追加
-      const frame = document.createElement('div');
-      frame.style.cssText = [
-        'position:absolute',
-        'left:0',
-        'top:' + (document.documentElement.scrollHeight + 200) + 'px',
-        'width:794px',
-        'background:#fff',
-        'padding:32px',
-        'font-family:Hiragino Kaku Gothic ProN,Meiryo,sans-serif',
-        'font-size:13px',
-        'color:#1a1f2e'
-      ].join(';');
-      frame.innerHTML = secHTML;
-      document.body.appendChild(frame);
-
-      // 画像ロード待ち
-      const imgs = frame.querySelectorAll('img');
-      await Promise.all(Array.from(imgs).map(img =>
-        img.complete ? Promise.resolve() :
-        new Promise(r => { img.onload=r; img.onerror=r; })
-      ));
-      await new Promise(r => setTimeout(r, 80));
-
-      const canvas = await html2canvas(frame, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        width: 794
-      });
-      document.body.removeChild(frame);
-
-      const imgW = PW;
-      const imgH = canvas.height * imgW / canvas.width;
-
-      // セクションがページをまたぐ場合はさらに分割
-      let yPos = 0, rem = imgH;
-      while (rem > 0) {
-        if (!firstPage) pdf.addPage();
-        firstPage = false;
-
-        const sliceH = Math.min(PH, rem);
-        const srcY   = yPos * canvas.height / imgH;
-        const srcH   = sliceH * canvas.height / imgH;
-        const sc = document.createElement('canvas');
-        sc.width = canvas.width; sc.height = Math.max(1, Math.ceil(srcH));
-        sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-        pdf.addImage(sc.toDataURL('image/png'), 'PNG', 0, 0, imgW, sliceH);
-        yPos += sliceH; rem -= sliceH;
-      }
+    // 印刷用ルート要素を生成
+    let root = document.getElementById('printRoot');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'printRoot';
+      root.style.display = 'none';
+      document.body.appendChild(root);
     }
+    root.innerHTML = buildPrintPages(mapImg);
 
-    const fname = `作業計画書_${state.dcName||'無題'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
-    pdf.save(fname);
-    toast('PDFを出力しました！');
+    // 画像ロード待ち
+    const imgs = root.querySelectorAll('img');
+    await Promise.all(Array.from(imgs).map(img =>
+      img.complete ? Promise.resolve() :
+      new Promise(r => { img.onload = r; img.onerror = r; })
+    ));
+
+    // ブラウザの印刷ダイアログを開く（PDF保存も可能）
+    window.print();
+
+    // 印刷後にクリーンアップ
+    setTimeout(() => {
+      root.innerHTML = '';
+      root.style.display = 'none';
+    }, 2000);
+
+    toast('印刷ダイアログを開きました（PDFで保存を選択してください）');
   } catch(e) {
     console.error(e);
-    toast('PDF生成に失敗しました: ' + e.message);
+    toast('エラー: ' + e.message);
   }
 }
 
 // セクションごとにHTMLを分割して返す
+function buildPrintPages(mapImg) {
+  const s = state;
+  const dt = s.workDate ? new Date(s.workDate).toLocaleString('ja-JP') : '未設定';
+  let html = '';
+
+  // ページ1: タイトル + DC情報
+  html += `<div class="p-page">
+    <div class="p-title">作業計画書</div>
+    <table class="meta-table">
+      <tr><td>DC / 局舎名</td><td>${esc(s.dcName)||'—'}</td></tr>
+      <tr><td>作業日時</td><td>${dt}</td></tr>
+      <tr><td>作業者</td><td>${esc(s.worker)||'—'}</td></tr>
+      <tr><td>承認者</td><td>${esc(s.approver)||'—'}</td></tr>
+      <tr><td>フロア / ゾーン</td><td>${esc(s.floorZone)||'—'}</td></tr>
+      <tr><td>緊急連絡先</td><td>${esc(s.emergency)||'—'}</td></tr>
+      <tr><td>作業概要</td><td>${esc(s.workSummary)||'—'}</td></tr>
+    </table>
+
+    ${(s.checklist||[]).length ? `
+      <div class="sec-hdr">🎒 持ち物チェックリスト</div>
+      <div class="sec-body">
+        ${s.checklist.map(c=>`<div class="cl-row"><span>□</span><span style="flex:1">${esc(c.name)}</span><span>${esc(c.qty)}</span></div>`).join('')}
+      </div>` : ''}
+  </div>`;
+
+  // 作業手順
+  if ((s.steps||[]).length) {
+    html += `<div class="p-page">
+      <div class="sec-hdr">📝 作業手順</div>
+      <div class="sec-body">
+        ${s.steps.map((st,i)=>`<div class="step-row"><div class="step-num">${i+1}</div><div style="flex:1;line-height:1.7">${nl2br(st.text)}</div></div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // ラック情報
+  if ((s.racks||[]).length) {
+    html += `<div class="p-page">
+      <div class="sec-hdr">🗄️ ラック情報</div>
+      <div class="sec-body">
+        ${s.racks.map(r=>`
+          <div style="margin-bottom:10pt;padding-bottom:10pt;border-bottom:1px solid #eee">
+            <b>${esc(r.id)}</b>　${esc(r.name)}<br>
+            <small style="color:#6b7494">${esc(r.memo)}</small>
+            ${(r.photos||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:8pt;margin-top:6pt">${r.photos.map(p=>`<img src="${p.src}" style="width:140pt;height:105pt;object-fit:contain;border:1px solid #ccc;border-radius:3pt">`).join('')}</div>`:''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // デバイス情報
+  if ((s.devices||[]).length) {
+    html += `<div class="p-page">
+      <div class="sec-hdr">💻 デバイス情報</div>
+      <div class="sec-body">
+        <table>
+          <thead><tr><th>デバイス名</th><th>型番/シリアル</th><th>ポート</th><th>備考</th></tr></thead>
+          <tbody>${s.devices.map(d=>`<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.model)}</td><td>${esc(d.port)}</td><td>${esc(d.memo)}</td></tr>`).join('')}</tbody>
+        </table>
+        ${s.devices.some(d=>(d.photos||[]).length)
+          ? s.devices.filter(d=>(d.photos||[]).length).map(d=>`
+            <div style="margin-top:8pt"><b>${esc(d.name)}</b> の写真</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8pt;margin-top:4pt">
+              ${d.photos.map(p=>`<img src="${p.src}" style="width:140pt;height:105pt;object-fit:contain;border:1px solid #ccc;border-radius:3pt">`).join('')}
+            </div>`).join('')
+          : ''}
+      </div>
+    </div>`;
+  }
+
+  // 接続情報 + マップ
+  if ((s.connections||[]).length) {
+    html += `<div class="p-page">
+      <div class="sec-hdr">🔗 接続情報</div>
+      <div class="sec-body">
+        <table>
+          <thead><tr><th class="conn-th">デバイスA</th><th class="conn-th">ポートA</th><th class="conn-th">デバイスB</th><th class="conn-th">ポートB</th><th class="conn-th">備考</th></tr></thead>
+          <tbody>${s.connections.map(l=>`<tr><td>${esc(l.deviceA)}</td><td>${esc(l.portA)}</td><td>${esc(l.deviceB)}</td><td>${esc(l.portB)}</td><td>${esc(l.memo)}</td></tr>`).join('')}</tbody>
+        </table>
+        ${mapImg?`<div style="margin-top:12pt"><b>接続マップ</b></div><img class="map-img" src="${mapImg}">`:''}
+      </div>
+    </div>`;
+  }
+
+  return html;
+}
+
 function buildSections(mapImg) {
   const s = state;
   const dt = s.workDate ? new Date(s.workDate).toLocaleString('ja-JP') : '未設定';
