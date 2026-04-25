@@ -177,6 +177,36 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
 /* プレビューに接続マップ画像 */
 .pv-map-img{width:100%;border-radius:8px;border:1px solid var(--border);margin-top:8px}
 
+/* 印刷用：画面外に配置して常にレンダリング済み状態にする */
+#printFrame{
+  position:fixed; left:-9999px; top:0;
+  width:794px; /* A4 96dpi相当 */
+  background:#fff;
+  padding:32px;
+  font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;
+  font-size:13px;
+  color:#1a1f2e;
+  z-index:-1;
+  pointer-events:none;
+}
+/* printFrame内のスタイル */
+#printFrame .pv-title{text-align:center;font-size:22px;font-weight:700;color:#1a2540;border-bottom:3px solid #2e7de0;padding-bottom:10px;margin-bottom:20px}
+#printFrame .pv-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px}
+#printFrame .pv-table td{border:1px solid #d4d8e8;padding:7px 10px}
+#printFrame .pv-table td:first-child{background:#1a2540;color:#fff;font-weight:700;width:30%}
+#printFrame .pv-sec{margin-bottom:20px}
+#printFrame .pv-sec-t{background:#1a2540;color:#fff;padding:7px 12px;font-size:13px;font-weight:700;border-radius:4px 4px 0 0}
+#printFrame .pv-sec-b{border:1px solid #d4d8e8;border-top:none;padding:12px;border-radius:0 0 4px 4px}
+#printFrame .pv-step{display:flex;gap:10px;margin-bottom:8px;align-items:flex-start}
+#printFrame .pv-step-n{background:#2e7de0;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;line-height:24px;text-align:center}
+#printFrame .pv-cl-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f6}
+#printFrame table.conn-table{width:100%;border-collapse:collapse;font-size:12px}
+#printFrame table.conn-table th{background:#1a2540;color:#fff;padding:6px 8px;text-align:left}
+#printFrame table.conn-table td{border:1px solid #d4d8e8;padding:6px 8px}
+#printFrame .pv-photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+#printFrame .pv-photo-grid img{width:160px;height:120px;object-fit:contain;border:1px solid #d4d8e8;border-radius:4px}
+#printFrame .map-img{width:100%;border-radius:4px;border:1px solid #d4d8e8;margin-top:8px}
+
 @media(min-width:600px){
   .home-cards{max-width:500px;margin:0 auto}
   .editor-body{max-width:680px;margin:0 auto}
@@ -187,6 +217,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:var(
 <body>
 
 <div id="toast"></div>
+<div id="printFrame"></div>
 
 <!-- ══ SCREEN: HOME ══ -->
 <div id="sHome" class="screen active">
@@ -802,237 +833,117 @@ function buildPreviewHTML(mapImg){
 }
 
 // ═══════════════════════════════════════
-//  PDF（jsPDF直接構築方式）
+//  PDF（printFrame + html2canvas方式・日本語対応）
 // ═══════════════════════════════════════
 async function exportPDF(){
   readFieldsToState();
   toast('PDF生成中...');
-  try{
-    const {jsPDF} = window.jspdf;
-    const pdf = new jsPDF({orientation:'p', unit:'mm', format:'a4'});
-    const PW=210, ML=14, MR=14, MT=14, LW=PW-ML-MR;
-    let y = MT;
+  try {
+    // 接続マップ画像を先に生成（Canvasベースなので非表示でもOK）
+    const mapImg = await getMapImage();
 
-    // フォント設定（日本語はlatin文字のみ正確に描画）
-    pdf.setFont('helvetica');
+    // 印刷用フレームにHTMLを書き込む（画面外に常時表示状態）
+    const frame = document.getElementById('printFrame');
+    frame.innerHTML = buildPrintHTML(mapImg);
 
-    function checkPage(need=8){
-      if(y+need>290){ pdf.addPage(); y=MT; }
-    }
-    function sectionHeader(title){
-      checkPage(12);
-      pdf.setFillColor(26,37,64);
-      pdf.rect(ML,y,LW,8,'F');
-      pdf.setTextColor(255,255,255);
-      pdf.setFontSize(10); pdf.setFont('helvetica','bold');
-      pdf.text(title, ML+3, y+5.5);
-      pdf.setTextColor(0,0,0);
-      y+=10;
-    }
-    function row(label,value,isLast=false){
-      checkPage(8);
-      pdf.setFillColor(232,241,252);
-      pdf.rect(ML,y,50,7,'F');
-      pdf.setDrawColor(210,216,232);
-      pdf.rect(ML,y,LW,7,'S');
-      pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-      pdf.setTextColor(26,37,64);
-      pdf.text(label,ML+2,y+5);
-      pdf.setFont('helvetica','normal');
-      pdf.setTextColor(0,0,0);
-      pdf.text(String(value||'—').substring(0,80),ML+52,y+5);
-      y+=7;
-    }
+    // 画像のロードを待つ
+    const imgs = frame.querySelectorAll('img');
+    await Promise.all(Array.from(imgs).map(img =>
+      img.complete ? Promise.resolve() : new Promise(r => { img.onload=r; img.onerror=r; })
+    ));
+    await new Promise(r => setTimeout(r, 100));
 
-    // タイトル
-    pdf.setFillColor(26,37,64);
-    pdf.rect(0,0,210,18,'F');
-    pdf.setTextColor(255,255,255);
-    pdf.setFontSize(14); pdf.setFont('helvetica','bold');
-    pdf.text('WORK PLAN', ML, 12);
-    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(state.dcName||'', 80, 12);
-    pdf.setTextColor(0,0,0);
-    y=24;
+    // html2canvasでキャプチャ（画面外でも position:fixed + left:-9999px なら描画される）
+    const canvas = await html2canvas(frame, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: 794,
+      windowWidth: 794 + 9999, // left:-9999pxのオフセットを補正
+      scrollX: 9999
+    });
 
-    // DC情報
-    sectionHeader('DC / Station Info');
-    const dt=state.workDate?new Date(state.workDate).toLocaleString('ja-JP'):'—';
-    row('DC Name',       state.dcName);
-    row('Date/Time',     dt);
-    row('Worker',        state.worker);
-    row('Approver',      state.approver);
-    row('Floor/Zone',    state.floorZone);
-    row('Emergency',     state.emergency);
-    if(state.workSummary){
-      checkPage(16);
-      pdf.setFillColor(232,241,252);
-      pdf.rect(ML,y,50,14,'F');
-      pdf.setDrawColor(210,216,232); pdf.rect(ML,y,LW,14,'S');
-      pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(26,37,64);
-      pdf.text('Summary',ML+2,y+5);
-      pdf.setFont('helvetica','normal'); pdf.setTextColor(0,0,0);
-      const lines=pdf.splitTextToSize(state.workSummary||'',LW-55);
-      pdf.text(lines,ML+52,y+5);
-      y+=Math.max(14, lines.length*4.5+3);
-    }
-    y+=4;
+    frame.innerHTML = ''; // クリア
 
-    // チェックリスト
-    if((state.checklist||[]).length){
-      sectionHeader('Checklist');
-      state.checklist.forEach(c=>{
-        checkPage(6);
-        pdf.setFontSize(8); pdf.setFont('helvetica','normal');
-        pdf.text('□  '+c.name+'  ('+c.qty+')',ML+3,y+4);
-        pdf.setDrawColor(220,220,220); pdf.line(ML,y+6,ML+LW,y+6);
-        y+=7;
-      });
-      y+=2;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
+    const PW = pdf.internal.pageSize.getWidth();
+    const PH = pdf.internal.pageSize.getHeight();
+    const imgW = PW;
+    const imgH = canvas.height * imgW / canvas.width;
+    let yPos = 0, rem = imgH;
+
+    while (rem > 0) {
+      if (yPos > 0) pdf.addPage();
+      const sliceH = Math.min(PH, rem);
+      const srcY   = yPos * canvas.height / imgH;
+      const srcH   = sliceH * canvas.height / imgH;
+      const sc = document.createElement('canvas');
+      sc.width = canvas.width; sc.height = srcH;
+      sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+      pdf.addImage(sc.toDataURL('image/png'), 'PNG', 0, 0, imgW, sliceH);
+      yPos += sliceH; rem -= sliceH;
     }
 
-    // 作業手順
-    if((state.steps||[]).length){
-      sectionHeader('Work Steps');
-      state.steps.forEach((s,i)=>{
-        checkPage(10);
-        pdf.setFillColor(46,125,224);
-        pdf.circle(ML+4,y+4,3,'F');
-        pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
-        pdf.text(String(i+1),ML+4,y+4.5,{align:'center'});
-        pdf.setTextColor(0,0,0); pdf.setFont('helvetica','normal'); pdf.setFontSize(8);
-        const lines=pdf.splitTextToSize(s.text||'',LW-12);
-        pdf.text(lines,ML+10,y+4);
-        y+=Math.max(8,lines.length*4.5)+2;
-      });
-      y+=2;
-    }
-
-    // ラック情報
-    if((state.racks||[]).length){
-      sectionHeader('Rack Info');
-      state.racks.forEach(r=>{
-        checkPage(10);
-        pdf.setFontSize(9); pdf.setFont('helvetica','bold');
-        pdf.text('['+r.id+'] '+r.name, ML+2,y+5);
-        y+=6;
-        if(r.memo){
-          pdf.setFontSize(7); pdf.setFont('helvetica','normal'); pdf.setTextColor(100,100,120);
-          pdf.text(r.memo,ML+4,y+4); y+=5; pdf.setTextColor(0,0,0);
-        }
-        // ラック写真
-        (r.photos||[]).forEach(async p=>{
-          if(p.src && y<270){
-            try{
-              checkPage(42);
-              pdf.addImage(p.src,'PNG',ML,y,60,45);
-              y+=47;
-            }catch(e){}
-          }
-        });
-        pdf.setDrawColor(210,216,232); pdf.line(ML,y,ML+LW,y); y+=4;
-      });
-      y+=2;
-    }
-
-    // デバイス情報
-    if((state.devices||[]).length){
-      sectionHeader('Device Info');
-      // テーブルヘッダー
-      checkPage(10);
-      ['Device','Model/Serial','Port','Note'].forEach((h,i)=>{
-        const cols=[0,45,90,130]; const ws=[43,43,38,42];
-        pdf.setFillColor(46,125,224);
-        pdf.rect(ML+cols[i],y,ws[i],7,'F');
-        pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
-        pdf.text(h,ML+cols[i]+2,y+5);
-      });
-      pdf.setTextColor(0,0,0); y+=7;
-      state.devices.forEach((d,di)=>{
-        checkPage(7);
-        const bg = di%2===0 ? [255,255,255] : [245,247,252];
-        pdf.setFillColor(...bg);
-        pdf.rect(ML,y,LW,7,'F');
-        pdf.setDrawColor(210,216,232); pdf.rect(ML,y,LW,7,'S');
-        pdf.setFontSize(7); pdf.setFont('helvetica','normal');
-        [[d.name,0,43],[d.model,45,43],[d.port,90,38],[d.memo,130,42]].forEach(([val,ox,maxW])=>{
-          const txt=pdf.splitTextToSize(val||'',maxW-3);
-          pdf.text(txt[0]||'',ML+ox+2,y+4.5);
-        });
-        y+=7;
-      });
-      y+=4;
-
-      // デバイス写真（別ブロック）
-      const hasPhotos = state.devices.some(d=>(d.photos||[]).length>0);
-      if(hasPhotos){
-        sectionHeader('Device Photos');
-        for(const d of state.devices){
-          for(const p of (d.photos||[])){
-            if(p.src){
-              try{
-                checkPage(50);
-                pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-                pdf.text(d.name,ML,y+4); y+=6;
-                pdf.addImage(p.src,'PNG',ML,y,80,60);
-                y+=64;
-              }catch(e){}
-            }
-          }
-        }
-      }
-    }
-
-    // 接続情報テーブル
-    if((state.connections||[]).length){
-      sectionHeader('Connection Info');
-      checkPage(10);
-      ['Dev A','Port A','Dev B','Port B','Note'].forEach((h,i)=>{
-        const cols=[0,36,72,108,144]; const ws=[34,34,34,34,38];
-        pdf.setFillColor(26,37,64);
-        pdf.rect(ML+cols[i],y,ws[i],7,'F');
-        pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
-        pdf.text(h,ML+cols[i]+2,y+5);
-      });
-      pdf.setTextColor(0,0,0); y+=7;
-      state.connections.forEach((c,ci)=>{
-        checkPage(7);
-        const bg=ci%2===0?[255,255,255]:[245,247,252];
-        pdf.setFillColor(...bg);
-        pdf.rect(ML,y,LW,7,'F');
-        pdf.setDrawColor(210,216,232); pdf.rect(ML,y,LW,7,'S');
-        pdf.setFontSize(7); pdf.setFont('helvetica','normal');
-        [[c.deviceA,0],[c.portA,36],[c.deviceB,72],[c.portB,108],[c.memo,144]].forEach(([val,ox])=>{
-          pdf.text(String(val||''),ML+ox+2,y+4.5);
-        });
-        y+=7;
-      });
-      y+=6;
-
-      // 接続マップ画像
-      const mapImg = await getMapImage();
-      if(mapImg){
-        sectionHeader('Connection Map');
-        checkPage(80);
-        const imgW=LW, imgH=Math.min(80,LW*0.6);
-        pdf.addImage(mapImg,'PNG',ML,y,imgW,imgH);
-        y+=imgH+4;
-      }
-    }
-
-    // フッター（全ページ）
-    const totalPages=pdf.internal.getNumberOfPages();
-    for(let p=1;p<=totalPages;p++){
-      pdf.setPage(p);
-      pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-      pdf.text(`Page ${p} / ${totalPages}`, ML, 292);
-      pdf.text(new Date().toLocaleString('ja-JP'), PW-MR, 292, {align:'right'});
-    }
-
-    const fname=`WorkPlan_${state.dcName||'draft'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
+    const fname = `作業計画書_${state.dcName||'無題'}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.pdf`;
     pdf.save(fname);
     toast('PDFを出力しました！');
-  }catch(e){console.error(e);toast('PDF生成に失敗しました: '+e.message);}
+  } catch(e) {
+    console.error(e);
+    toast('PDF生成に失敗しました: ' + e.message);
+  }
+}
+
+// 印刷専用HTML（pv-と同じ構造・printFrame用）
+function buildPrintHTML(mapImg) {
+  const s = state;
+  const dt = s.workDate ? new Date(s.workDate).toLocaleString('ja-JP') : '未設定';
+  let h = `<div class="pv-title">作業計画書</div>`;
+  h += `<table class="pv-table">
+    <tr><td>DC / 局舎名</td><td>${esc(s.dcName)||'—'}</td></tr>
+    <tr><td>作業日時</td><td>${dt}</td></tr>
+    <tr><td>作業者</td><td>${esc(s.worker)||'—'}</td></tr>
+    <tr><td>承認者</td><td>${esc(s.approver)||'—'}</td></tr>
+    <tr><td>フロア / ゾーン</td><td>${esc(s.floorZone)||'—'}</td></tr>
+    <tr><td>緊急連絡先</td><td>${esc(s.emergency)||'—'}</td></tr>
+    <tr><td>作業概要</td><td>${esc(s.workSummary)||'—'}</td></tr>
+  </table>`;
+
+  if ((s.checklist||[]).length) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">🎒 持ち物チェックリスト</div><div class="pv-sec-b">
+      ${s.checklist.map(c=>`<div class="pv-cl-row"><span>□</span><span style="flex:1">${esc(c.name)}</span><span style="color:#6b7494">${esc(c.qty)}</span></div>`).join('')}
+    </div></div>`;
+  }
+  if ((s.steps||[]).length) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">📝 作業手順</div><div class="pv-sec-b">
+      ${s.steps.map((st,i)=>`<div class="pv-step"><div class="pv-step-n">${i+1}</div><div style="flex:1;line-height:1.7">${esc(st.text).replace(/\n/g,'<br>')}</div></div>`).join('')}
+    </div></div>`;
+  }
+  if ((s.racks||[]).length) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">🗄️ ラック情報</div><div class="pv-sec-b">
+      ${s.racks.map(r=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f0f2f6">
+        <b>${esc(r.id)}</b>　${esc(r.name)}<br><small style="color:#6b7494">${esc(r.memo)}</small>
+        ${(r.photos||[]).length?`<div class="pv-photo-grid">${r.photos.map(p=>`<img src="${p.src}" crossorigin="anonymous">`).join('')}</div>`:''}</div>`).join('')}
+    </div></div>`;
+  }
+  if ((s.devices||[]).length) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">💻 デバイス情報</div><div class="pv-sec-b">
+      ${s.devices.map(d=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f0f2f6">
+        <b>${esc(d.name)}</b>　<small style="color:#6b7494">${esc(d.model)}</small><br>
+        ポート: ${esc(d.port)||'—'}<br><small>${esc(d.memo)}</small>
+        ${(d.photos||[]).length?`<div class="pv-photo-grid">${d.photos.map(p=>`<img src="${p.src}" crossorigin="anonymous">`).join('')}</div>`:''}</div>`).join('')}
+    </div></div>`;
+  }
+  if ((s.connections||[]).length) {
+    h += `<div class="pv-sec"><div class="pv-sec-t">🔗 接続情報</div><div class="pv-sec-b">
+      <table class="conn-table">
+        <thead><tr><th>デバイスA</th><th>ポートA</th><th>デバイスB</th><th>ポートB</th><th>備考</th></tr></thead>
+        <tbody>${s.connections.map(l=>`<tr><td>${esc(l.deviceA)}</td><td>${esc(l.portA)}</td><td>${esc(l.deviceB)}</td><td>${esc(l.portB)}</td><td>${esc(l.memo)}</td></tr>`).join('')}</tbody>
+      </table>
+      ${mapImg?`<div class="pv-sec-t" style="margin-top:16px">🗺️ 接続マップ</div><img class="map-img" src="${mapImg}">`:''}</div></div>`;
+  }
+  return h;
 }
 
 // ═══════════════════════════════════════
